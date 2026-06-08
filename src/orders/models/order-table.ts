@@ -1,0 +1,19 @@
+export const OrderTable = {
+  TableName: 'Order',
+  Fields: {
+    ClientName: 'clientName',
+    ClientPhone: 'clientPhone',
+    ClientEmail: 'clientEmail',
+    TelegramId: 'telegramId',
+    Status: 'status',
+    Service: 'service',
+    CustomComment: 'customComment',
+    LocationType: 'locationType',
+    LocationData: 'locationData',
+    CemeteryDetails: 'cemeteryDetails',
+    ClientPhotos: 'clientPhotos',
+    ReportPhotosBefore: 'reportPhotosBefore',
+    ReportPhotosAfter: 'reportPhotosAfter',
+    AdminComment: 'adminComment',
+  },
+} as const;

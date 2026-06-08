@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: dmutrobot_backend
+    ports:
+      - "${PORT:-3000}:3000" # Прокидаємо порт з .env (або 3000 за замовчуванням)
+    env_file:
+      - .env # Автоматично передає BACK4APP_APP_ID, BACK4APP_JS_KEY тощо всередину контейнера
+    restart: always
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+#Зібрати та запустити контейнер у фоновому режимі:
+#docker compose up --build -d
+
+#Переглянути логи сервера (що пише NestJS у консоль всередині контейнера):
+#docker compose logs -f api
+
+#Зупинити контейнер:
+#docker compose down
