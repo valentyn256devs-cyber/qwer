@@ -1,11 +1,11 @@
-import { Command, Ctx, Hears, On, Start, Update } from 'nestjs-telegraf';
+import {Command, Ctx, Hears, On, Start, Update} from 'nestjs-telegraf';
 import { OrdersService } from '../../orders/orders.service';
 import { ServicesService } from '../../services/services.service';
-import { Context, Markup } from 'telegraf';
-import { type OrderWizardContext } from '../interfaces/order-wizard-context.interface';
+import {Context, Markup} from 'telegraf';
+import { type OrderWizardContext } from './interfaces/order-wizard-context.interface';
 
 @Update()
-export class TelegramOrderListener {
+export class TelegramClientListener {
   constructor(
     private readonly ordersService: OrdersService,
     private readonly servicesService: ServicesService,
@@ -119,7 +119,7 @@ export class TelegramOrderListener {
     // або автоматичну відповідь менеджера, якщо це не команда.
     await ctx.reply(
       `Отримано повідомлення: "${text}".\n` +
-        `Якщо ви хочете подати заявку або дізнатися статус, використовуйте меню команд (натисніть /).`,
+        `Якщо ви хочете подати заявку або дізнатися статус, використовуйте меню команд (натисніть /start).`,
     );
   }
 

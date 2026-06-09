@@ -8,13 +8,20 @@ import * as Parse from 'parse/node';
 import { OrderTable } from './models/order-table';
 import { OrderStatus } from './models/order-status';
 import { CreateOrderDto } from './dto/create-order.dto';
+import {InjectBot} from "nestjs-telegraf";
+import {TelegramBot} from "../telegram-bot/telegram-constants";
+import {Context, Telegraf} from "telegraf";
 
 @Injectable()
 export class OrdersService {
   private readonly orderClassName = OrderTable.TableName;
   private readonly serviceClassName = 'Service';
 
-  constructor(private back4app: Back4appService) {}
+  constructor(
+    private back4app: Back4appService,
+              @InjectBot(TelegramBot.ClientBot)
+              private readonly clientBot: Telegraf<Context>
+  ) {}
 
   async create(createOrderDto: CreateOrderDto) {
     const {
@@ -175,6 +182,54 @@ export class OrdersService {
         `Помилка під час завантаження фотозвіту: ${(error as Error).message}`,
       );
     }
+  }
+
+  /**
+   * ✅ Метод ПІДТВЕРДЖЕННЯ заявки адміном + сповіщення клієнта
+   */
+  async confirmAndNotify(orderId: string, clientId: string) {
+    const updatedOrder = await this.updateStatus(orderId, OrderStatus.Confirmed);
+
+    await this.clientBot.telegram.sendMessage(
+      clientId,
+      `🟢 <b>Вашу заявку №${orderId} успішно підтверджено адміністратором!</b>\n\n` +
+      `Ми вже взялися за виконання роботи. Очікуйте на фотозвіт.`,
+      { parse_mode: 'HTML' }
+    );
+
+    return updatedOrder;
+  }
+
+  /**
+   * ❌ Метод ВІДХИЛЕННЯ заявки адміном + сповіщення клієнта
+   */
+  async rejectAndNotify(orderId: string, clientId: string) {
+    const updatedOrder = await this.updateStatus(orderId, OrderStatus.Rejected);
+
+    await this.clientBot.telegram.sendMessage(
+      clientId,
+      `🔴 <b>На жаль, вашу заявку №${orderId} було відхилено.</b>\n\n` +
+      `Для уточнення деталей або якщо виникла помилка, будь ласка, зв'яжіться з нашою підтримкою або натисніть /help.`,
+      { parse_mode: 'HTML' }
+    );
+
+    return updatedOrder;
+  }
+
+  /**
+   * 🔍 Метод запиту на УТОЧНЕННЯ даних + сповіщення клієнта
+   */
+  async clarifyAndNotify(orderId: string, clientId: string) {
+    const updatedOrder = await this.updateStatus(orderId, OrderStatus.PendingClarification);
+
+    await this.clientBot.telegram.sendMessage(
+      clientId,
+      `🟡 <b>Адміністратор просить уточнити дані щодо заявки №${orderId}.</b>\n\n` +
+      `Найближчим часом менеджер зв'яжеться з вами за вказаним номером телефону або безпосередньо в Telegram для узгодження деталей.`,
+      { parse_mode: 'HTML' }
+    );
+
+    return updatedOrder;
   }
 
   private mapOrderFields(order: Parse.Object) {

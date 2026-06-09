@@ -24,10 +24,3 @@ export type OrderWizardContext = Context &
       state: OrderWizardSession;
     };
   };
-
-/*export interface OrderWizardContext extends Context, SceneContext {
-  // Розширюємо стандартний контекст Telegraf чарівником
-  wizard: WizardContext<OrderWizardSession> & {
-    state: OrderWizardSession;
-  };
-}*/

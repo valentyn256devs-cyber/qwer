@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsArray,
   IsEmail,
   IsIn,
   IsNotEmpty,
@@ -82,4 +83,14 @@ export class CreateOrderDto {
   @IsString()
   @IsOptional()
   cemeteryDetails?: string;
+
+  @ApiPropertyOptional({
+    description: 'Масив посилань або Telegram file_id завантажених фото',
+    type: [String],
+    example: ['AgACAgIAAxkBAAP3Zp...', 'AgACAgIAAxkBAAP4Zp...'],
+  })
+  @IsArray()
+  @IsString({ each: true }) // Перевіряє, що кожен елемент масиву є рядком
+  @IsOptional()
+  photos?: string[];
 }

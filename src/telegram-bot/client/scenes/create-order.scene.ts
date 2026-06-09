@@ -1,14 +1,18 @@
-import { Wizard, WizardStep, Context as Ctx } from 'nestjs-telegraf';
-import { Markup } from 'telegraf';
-import { ServicesService } from '../../services/services.service';
-import { OrdersService } from '../../orders/orders.service';
-import { type OrderWizardContext } from '../interfaces/order-wizard-context.interface';
+import {Wizard, WizardStep, Context as Ctx, InjectBot} from 'nestjs-telegraf';
+import {Context, Markup, Telegraf, Telegram} from 'telegraf';
+import { ServicesService } from '../../../services/services.service';
+import { OrdersService } from '../../../orders/orders.service';
+import {type OrderWizardContext, OrderWizardSession} from '../interfaces/order-wizard-context.interface';
+import {TelegramBot} from "../../telegram-constants";
 
 @Wizard('CREATE_ORDER_WIZARD')
 export class CreateOrderScene {
   constructor(
     private readonly ordersService: OrdersService,
     private readonly servicesService: ServicesService,
+
+    @InjectBot(TelegramBot.AdminBot)
+    private readonly adminBot: Telegraf<Context>,
   ) {}
 
   /**
@@ -279,6 +283,7 @@ export class CreateOrderScene {
             customComment: state.customComment,
             locationType: state.locationType ?? 'address_text',
             locationData: state.locationData ?? '',
+            photos: state.clientPhotos ?? [],
           });
 
           await ctx.reply(
@@ -289,6 +294,8 @@ export class CreateOrderScene {
               reply_markup: Markup.removeKeyboard().reply_markup,
             },
           );
+
+          await this.sendOrderToAdmin(ctx.telegram, newOrder.id, state, telegramId);
         } catch (error) {
           console.log(error);
           await ctx.reply(
@@ -309,4 +316,49 @@ export class CreateOrderScene {
 
     return ctx.scene.leave();
   }
+
+  private async sendOrderToAdmin(telegram: Telegram, orderId: string,  state: OrderWizardSession, telegramId: string) {
+      const ADMIN_BOT_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
+
+      const adminSummary =
+        `🔔 <b>НОВА ЗАЯВКА №${orderId}</b>\n\n` +
+        `📦 <b>Послуга:</b> ${state.serviceName ?? ''}\n` +
+        `📍 <b>Місце:</b> (${state.locationType}) ${state.locationData ?? ''}\n` +
+        `👤 <b>Клієнт:</b> ${state.clientName ?? ''}\n` +
+        `📱 <b>Телефон:</b> ${state.clientPhone ?? ''}\n` +
+        `💬 <b>Коментар:</b> ${state.customComment ?? 'Немає'}`;
+
+      const adminButtons = Markup.inlineKeyboard([
+        [
+          Markup.button.callback('✅ Підтвердити', `admin_confirm_${orderId}_${telegramId}`),
+          Markup.button.callback('❌ Відхилити', `admin_reject_${orderId}_${telegramId}`),
+        ],
+        [
+          Markup.button.callback('🔍 Уточнити', `admin_clarify_${orderId}_${telegramId}`)
+        ]
+      ]).reply_markup;
+
+      try {
+        // 3. Надсилаємо адміну (з фото, якщо воно є, або просто текстом)
+        if (state.clientPhotos && state.clientPhotos.length > 0) {
+          // Беремо перше фото з масиву для головної картки з кнопками
+          const mainPhoto = state.clientPhotos[0];
+
+          await this.adminBot.telegram.sendPhoto(ADMIN_BOT_CHAT_ID, mainPhoto, {
+            caption: adminSummary,
+            parse_mode: 'HTML',
+            reply_markup: adminButtons,
+          });
+        } else {
+          await this.adminBot.telegram.sendMessage(ADMIN_BOT_CHAT_ID, adminSummary, {
+            parse_mode: 'HTML',
+            reply_markup: adminButtons,
+          });
+        }
+        console.log('🚀 Картку успішно відправлено адмін-ботом!');
+      } catch (error) {
+        console.error('❌ Помилка відправки через адмін-бота:', error);
+      }
+  }
+
 }
