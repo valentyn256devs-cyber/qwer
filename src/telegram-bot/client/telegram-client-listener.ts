@@ -34,6 +34,11 @@ export class TelegramClientListener {
   @Hears('✨ Створити замовлення')
   @Command('create_order')
   async onCreateOrder(@Ctx() ctx: OrderWizardContext) {
+    ctx.session.orderForm = {};
+
+    // 🔥 ГОЛОВНИЙ ФІКС: Надсилаємо невидиме повідомлення про вхід, яке згортає меню
+    await ctx.reply('⏳ Ініціалізую оформлення замовлення...', Markup.removeKeyboard());
+
     // Входимо в раніше створену нами покрокову сцену
     await ctx.scene.enter('CREATE_ORDER_WIZARD');
   }

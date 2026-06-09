@@ -9,6 +9,7 @@ import {TelegramClientModule} from "./telegram-bot/client/telegram-client.module
 import {TelegramBot} from "./telegram-bot/telegram-constants";
 import {TelegramAdminModule} from "./telegram-bot/admin/telegram-admin.module";
 import {BurialsModule} from "./burials/burials.module";
+import {BotInitializerService} from "./telegram-bot/bot-init.service";
 
 @Module({
   imports: [
@@ -48,7 +49,7 @@ import {BurialsModule} from "./burials/burials.module";
     OrdersModule,
     BurialsModule,
   ],
-  providers: [Back4appService],
+  providers: [Back4appService, BotInitializerService],
   exports: [Back4appService],
 })
 export class AppModule {}

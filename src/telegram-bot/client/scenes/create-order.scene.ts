@@ -104,20 +104,19 @@ export class CreateOrderScene {
    */
   @WizardStep(3)
   async stepChooseLocation(@Ctx() ctx: OrderWizardContext) {
+    if (!ctx.session.orderForm) {
+      ctx.session.orderForm = {};
+    }
+
     // 1. Отримуємо об'єкт callbackQuery
-    const callbackQuery = ctx.callbackQuery;
+    // const callbackQuery = ctx.callbackQuery;
 
     // 2. Перевіряємо за допомогою оператора 'in', чи є в ньому дані (data)
-    if (callbackQuery && 'data' in callbackQuery) {
+    /*if (callbackQuery && 'data' in callbackQuery) {
       const callbackData = callbackQuery.data;
 
       if (callbackData.startsWith('service_')) {
         const [, serviceId] = callbackData.split('_');
-
-        if (!ctx.session.orderForm) {
-          ctx.session.orderForm = {};
-        }
-
         try {
           const service = await this.servicesService.findOne(serviceId);
 
@@ -131,13 +130,17 @@ export class CreateOrderScene {
         // Передаємо ID запиту, щоб зняти "зависання" (годинничок) з інлайн-кнопки.
         await ctx.telegram.answerCbQuery(callbackQuery.id);
       }
+    }*/
+
+    // Якщо користувач щойно прийшов зі створення послуги через callback
+    const callbackQuery = ctx.callbackQuery;
+    if (callbackQuery && 'data' in callbackQuery) {
+      await ctx.telegram.answerCbQuery(callbackQuery.id);
     }
 
     // 3. Якщо користувач чомусь не обрав послугу, а просто надіслав текст
     if (!ctx.session.orderForm?.serviceId) {
-      await ctx.reply(
-        'Будь ласка, оберіть послугу зі списку вище, натиснувши на кнопку.',
-      );
+      await ctx.reply('Будь ласка, оберіть послугу зі списку вище, натиснувши на кнопку.');
       return; // Залишаємо користувача на цьому ж кроці
     }
 
@@ -153,7 +156,8 @@ export class CreateOrderScene {
     });
 
     // Переходимо до наступного кроку візарда
-    ctx.wizard.next();
+    // ctx.wizard.next();
+    ctx.wizard.selectStep(3);
   }
 
   /**
@@ -163,7 +167,21 @@ export class CreateOrderScene {
   async stepGeoLocation(@Ctx() ctx: OrderWizardContext) {
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
-    const text = ctx.message?.text as string | undefined;
+    const text = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
+
+    // Якщо користувач прислав не текст, або текст не з кнопок меню
+    const validButtons = [
+      '📍 Геолокація Telegram',
+      '🔗 Посилання Google Maps',
+      '✍️ Текстовий опис',
+      '🏛 Область / Населений пункт'
+    ];
+
+    if (!text || !validButtons.includes(text)) {
+      await ctx.reply('Будь ласка, оберіть один з варіантів на клавіатурі меню.');
+      return; // 🛑 ЗУПИНЯЄМО ФЛОУ. Користувач залишається на цьому кроці, поки не натисне кнопку.
+    }
+
     if (!ctx.session.orderForm) {
       ctx.session.orderForm = {};
     }
@@ -179,14 +197,14 @@ export class CreateOrderScene {
     } else if (text === '🔗 Посилання Google Maps') {
       ctx.session.orderForm.locationType = 'google_maps';
       await ctx.reply(
-        'Надішліть посилання на Google Maps:',
-        Markup.removeKeyboard(),
+        '✍️ <b>Надішліть посилання на Google Maps:</b>',
+        { parse_mode: 'HTML', reply_markup: Markup.removeKeyboard().reply_markup }
       );
     } else {
       ctx.session.orderForm.locationType = 'address_text';
       await ctx.reply(
-        'Введіть повний опис місця (Область, Цвинтар, Сектор/Ряд/Номер):',
-        Markup.removeKeyboard(),
+        '✍️ <b>Введіть повний опис місця</b> (Область, Населений пункт, Цвинтар, Сектор/Ряд/Номер):',
+        { parse_mode: 'HTML', reply_markup: Markup.removeKeyboard().reply_markup }
       );
     }
     ctx.wizard.next();
@@ -198,6 +216,7 @@ export class CreateOrderScene {
   @WizardStep(5)
   async stepCoordinates(@Ctx() ctx: OrderWizardContext) {
     const msg = ctx.message;
+
     if (!ctx.session.orderForm) {
       ctx.session.orderForm = {};
     }
@@ -229,6 +248,7 @@ export class CreateOrderScene {
       '<b>Крок 4. Додайте опис завдання</b> (напишіть текст коментаря або побажань):',
       {
         parse_mode: 'HTML',
+        reply_markup: Markup.removeKeyboard().reply_markup,
       },
     );
 
@@ -388,6 +408,7 @@ export class CreateOrderScene {
       return;
     }
 
+    await this.showMainMenu(ctx);
     return ctx.scene.leave();
   }
 
@@ -433,6 +454,19 @@ export class CreateOrderScene {
     } catch (error) {
       console.error('❌ Помилка відправки через адмін-бота:', error);
     }
+  }
+
+  private async showMainMenu(ctx: Context, ) {
+    const mainMenu = Markup.keyboard([
+      ['✨ Створити замовлення'],
+      ['🗂 Мої замовлення', 'ℹ️ Допомога'],
+    ]).resize().reply_markup;
+
+    // 🔥 ГОЛОВНИЙ ФІКС 2: Повертаємо головне меню при скасуванні
+    await ctx.reply(
+      'Головне меню:',
+      { reply_markup: mainMenu },
+    );
   }
 
 }

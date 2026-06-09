@@ -39,24 +39,6 @@ export class TelegramAdminListener {
       } else {
         await ctx.editMessageText(text, { parse_mode: 'HTML' });
       }
-
-      /*// Оновлюємо статус в базі (Parse / Back4app чи PostgreSQL)
-      // Наприклад, статус 'confirmed' або 'in_progress'
-      await this.ordersService.updateStatus(orderId, OrderStatus.Confirmed);
-
-      // Сповіщаємо АДМІНА, що дія пройшла успішно (оновлюємо текст або плашку)
-      ctx.editMessageCaption ?
-        await ctx.editMessageCaption(`🟢 <b>Заявку №${orderId} ПІДТВЕРДЖЕНО</b>`, { parse_mode: 'HTML' }) :
-        await ctx.editMessageText(`🟢 <b>Заявку №${orderId} ПІДТВЕРДЖЕНО</b>`, { parse_mode: 'HTML' });
-
-      // 🔥 ГОЛОВНЕ: Сповіщаємо КЛІЄНТА через bot.telegram
-      await ctx.telegram.sendMessage(
-        clientId,
-        `🟢 <b>Вашу заявку №${orderId} успішно підтверджено адміністратором!</b>\n` +
-        `Ми вже взялися за виконання роботи. Очікуйте на фотозвіт.`,
-        { parse_mode: 'HTML' }
-      );
-*/
     } catch (error) {
       console.error(error);
       await ctx.answerCbQuery('Помилка оновлення статусу.');
@@ -81,19 +63,9 @@ export class TelegramAdminListener {
       } else {
         await ctx.editMessageText(text, { parse_mode: 'HTML' });
       }
-
-      /*ctx.editMessageCaption ?
-        await ctx.editMessageCaption(`🔴 <b>Заявку №${orderId} ВІДХИЛЕНО</b>`, { parse_mode: 'HTML' }) :
-        await ctx.editMessageText(`🔴 <b>Заявку №${orderId} ВІДХИЛЕНО</b>`, { parse_mode: 'HTML' });
-
-      await ctx.telegram.sendMessage(
-        clientId,
-        `🔴 <b>На жаль, вашу заявку №${orderId} було відхилено.</b>\n` +
-        `Для уточнення деталей або якщо виникла помилка, будь ласка, зв'яжіться з нашою підтримкою або натисніть /help.`,
-        { parse_mode: 'HTML' }
-      );*/
     } catch (error) {
       console.error(error);
+      await ctx.answerCbQuery('Помилка оновлення статусу.');
     }
   }
 
@@ -115,19 +87,9 @@ export class TelegramAdminListener {
       } else {
         await ctx.editMessageText(text, { parse_mode: 'HTML' });
       }
-
-      /*ctx.editMessageCaption ?
-        await ctx.editMessageCaption(`🟡 <b>Надіслано запит на УТОЧНЕННЯ до заявки №${orderId}</b>`, { parse_mode: 'HTML' }) :
-        await ctx.editMessageText(`🟡 <b>Надіслано запит на УТОЧНЕННЯ до заявки №${orderId}</b>`, { parse_mode: 'HTML' });
-
-      await ctx.telegram.sendMessage(
-        clientId,
-        `🟡 <b>Адміністратор просить уточнити дані щодо заявки №${orderId}.</b>\n\n` +
-        `Найближчим часом менеджер зв'яжеться з вами за вказаним номером телефону або безпосередньо в Telegram для узгодження деталей.`,
-        { parse_mode: 'HTML' }
-      );*/
     } catch (error) {
       console.error(error);
+      await ctx.answerCbQuery('Помилка оновлення статусу.');
     }
   }
 
