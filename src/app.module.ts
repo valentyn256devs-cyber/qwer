@@ -8,6 +8,7 @@ import { session } from 'telegraf';
 import {TelegramClientModule} from "./telegram-bot/client/telegram-client.module";
 import {TelegramBot} from "./telegram-bot/telegram-constants";
 import {TelegramAdminModule} from "./telegram-bot/admin/telegram-admin.module";
+import {BurialsModule} from "./burials/burials.module";
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import {TelegramAdminModule} from "./telegram-bot/admin/telegram-admin.module";
 
     ServicesModule,
     OrdersModule,
+    BurialsModule,
   ],
   providers: [Back4appService],
   exports: [Back4appService],

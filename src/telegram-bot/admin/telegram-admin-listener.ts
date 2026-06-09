@@ -63,7 +63,7 @@ export class TelegramAdminListener {
     }
   }
 
-// 2. Обробка кнопки "Відхилити"
+  // 2. Обробка кнопки "Відхилити"
   @Action(/^admin_reject_(.+)_(.+)$/)
   async handleAdminReject(@Ctx() ctx: Context) {
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;

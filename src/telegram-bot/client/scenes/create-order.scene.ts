@@ -1,8 +1,8 @@
-import {Wizard, WizardStep, Context as Ctx, InjectBot} from 'nestjs-telegraf';
-import {Context, Markup, Telegraf, Telegram} from 'telegraf';
-import { ServicesService } from '../../../services/services.service';
-import { OrdersService } from '../../../orders/orders.service';
-import {type OrderWizardContext, OrderWizardSession} from '../interfaces/order-wizard-context.interface';
+import {Context as Ctx, InjectBot, Wizard, WizardStep} from 'nestjs-telegraf';
+import {Context, Markup, Telegraf} from 'telegraf';
+import {ServicesService} from '../../../services/services.service';
+import {OrdersService} from '../../../orders/orders.service';
+import {OrderForm, type OrderWizardContext} from '../interfaces/order-wizard-context.interface';
 import {TelegramBot} from "../../telegram-constants";
 
 @Wizard('CREATE_ORDER_WIZARD')
@@ -10,16 +10,32 @@ export class CreateOrderScene {
   constructor(
     private readonly ordersService: OrdersService,
     private readonly servicesService: ServicesService,
-
     @InjectBot(TelegramBot.AdminBot)
     private readonly adminBot: Telegraf<Context>,
-  ) {}
+  ) {
+  }
 
   /**
    * КРОК 1: Вибір типу послуги
    */
   @WizardStep(1)
-  async step1(@Ctx() ctx: OrderWizardContext) {
+  async stepStart(@Ctx() ctx: OrderWizardContext) {
+    if (!ctx.session.orderForm) {
+      ctx.session.orderForm = {};
+    }
+
+    // 🔥 Якщо користувач повернувся зі створеним похованням
+    if (ctx.session.pendingBurial) {
+      ctx.session.orderForm.burialId = ctx.session.pendingBurial?.id;
+      ctx.session.orderForm.burialDisplayName = ctx.session.pendingBurial?.displayName;
+
+      delete ctx.session.pendingBurial;
+
+      ctx.wizard.selectStep(3);
+      // 2. Викликаємо метод Кроку 2 напряму, щоб юзер не чекав наступного повідомлення
+      return this.stepChooseLocation(ctx);
+    }
+
     await ctx.reply('🔄 Завантажую доступні послуги...');
     try {
       const services = await this.servicesService.findAll();
@@ -47,11 +63,47 @@ export class CreateOrderScene {
     }
   }
 
+  @WizardStep(2)
+  async stepAddBurial(@Ctx() ctx: OrderWizardContext) {
+    const callbackQuery = ctx.callbackQuery;
+    if (callbackQuery && 'data' in callbackQuery) {
+      const callbackData = callbackQuery.data;
+
+      if (callbackData.startsWith('service_')) {
+        const [, serviceId] = callbackData.split('_');
+
+        if (!ctx.session.orderForm) {
+          ctx.session.orderForm = {};
+        }
+
+        try {
+          const service = await this.servicesService.findOne(serviceId);
+          ctx.session.orderForm.serviceId = serviceId;
+          ctx.session.orderForm.serviceName = service.name;
+        } catch (e) {
+          ctx.session.orderForm.serviceId = serviceId;
+          ctx.session.orderForm.serviceName = 'Послуга';
+        }
+
+        await ctx.telegram.answerCbQuery(callbackQuery.id);
+
+        // 🔥 ПЕРЕХІД: Одразу викликаємо інший візард
+        await ctx.reply('Зараз необхідно заповнити картку поховання (ПІБ, дати тощо)...');
+        return ctx.scene.enter('CREATE_BURIAL_WIZARD');
+      }
+    }
+
+    if (!ctx.session.orderForm?.serviceId) {
+      await ctx.reply('Будь ласка, оберіть послугу зі списку вище, натиснувши на кнопку.');
+      return;
+    }
+  }
+
   /**
    * КРОК 2: Обробка вибору послуги та вибір варіанту локації
    */
-  @WizardStep(2)
-  async step2(@Ctx() ctx: OrderWizardContext) {
+  @WizardStep(3)
+  async stepChooseLocation(@Ctx() ctx: OrderWizardContext) {
     // 1. Отримуємо об'єкт callbackQuery
     const callbackQuery = ctx.callbackQuery;
 
@@ -62,25 +114,27 @@ export class CreateOrderScene {
       if (callbackData.startsWith('service_')) {
         const [, serviceId] = callbackData.split('_');
 
+        if (!ctx.session.orderForm) {
+          ctx.session.orderForm = {};
+        }
+
         try {
           const service = await this.servicesService.findOne(serviceId);
 
-          ctx.wizard.state.serviceId = serviceId;
-          ctx.wizard.state.serviceName = service.name;
+          ctx.session.orderForm.serviceId = serviceId;
+          ctx.session.orderForm.serviceName = service.name;
         } catch (e) {
           console.log(e);
-          ctx.wizard.state.serviceId = serviceId;
-          ctx.wizard.state.serviceName = 'Послуга';
+          ctx.session.orderForm.serviceId = serviceId;
+          ctx.session.orderForm.serviceName = 'Послуга';
         }
-        // 🔥 КАНТОВИЙ ФІКС: Викликаємо метод безпосередньо через Telegram API клієнт.
-        // Згідно з надісланим d.ts, ctx.telegram завжди доступний і містить нативний метод.
         // Передаємо ID запиту, щоб зняти "зависання" (годинничок) з інлайн-кнопки.
         await ctx.telegram.answerCbQuery(callbackQuery.id);
       }
     }
 
     // 3. Якщо користувач чомусь не обрав послугу, а просто надіслав текст
-    if (!ctx.wizard.state.serviceId) {
+    if (!ctx.session.orderForm?.serviceId) {
       await ctx.reply(
         'Будь ласка, оберіть послугу зі списку вище, натиснувши на кнопку.',
       );
@@ -105,14 +159,17 @@ export class CreateOrderScene {
   /**
    * КРОК 3: Очікування вибору варіанту і підказка як ввести дані
    */
-  @WizardStep(3)
-  async step3(@Ctx() ctx: OrderWizardContext) {
+  @WizardStep(4)
+  async stepGeoLocation(@Ctx() ctx: OrderWizardContext) {
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
     const text = ctx.message?.text as string | undefined;
+    if (!ctx.session.orderForm) {
+      ctx.session.orderForm = {};
+    }
 
     if (text === '📍 Геолокація Telegram') {
-      ctx.wizard.state.locationType = 'coordinates';
+      ctx.session.orderForm.locationType = 'coordinates';
       await ctx.reply(
         'Надішліть, будь ласка, локацію (кнопка Скріпка -> Локація):',
         Markup.keyboard([
@@ -120,13 +177,13 @@ export class CreateOrderScene {
         ]).resize(),
       );
     } else if (text === '🔗 Посилання Google Maps') {
-      ctx.wizard.state.locationType = 'google_maps';
+      ctx.session.orderForm.locationType = 'google_maps';
       await ctx.reply(
         'Надішліть посилання на Google Maps:',
         Markup.removeKeyboard(),
       );
     } else {
-      ctx.wizard.state.locationType = 'address_text';
+      ctx.session.orderForm.locationType = 'address_text';
       await ctx.reply(
         'Введіть повний опис місця (Область, Цвинтар, Сектор/Ряд/Номер):',
         Markup.removeKeyboard(),
@@ -138,9 +195,12 @@ export class CreateOrderScene {
   /**
    * КРОК 4: Запис локації та перехід до Опису завдання / Коментаря
    */
-  @WizardStep(4)
-  async step4(@Ctx() ctx: OrderWizardContext) {
+  @WizardStep(5)
+  async stepCoordinates(@Ctx() ctx: OrderWizardContext) {
     const msg = ctx.message;
+    if (!ctx.session.orderForm) {
+      ctx.session.orderForm = {};
+    }
 
     // 1. Перевіряємо, чи взагалі існує об'єкт повідомлення
     if (!msg) {
@@ -149,12 +209,12 @@ export class CreateOrderScene {
     }
 
     // 2. Безпечно перевіряємо наявність геолокації (Варіант 2 з ТЗ)
-    if (ctx.wizard.state.locationType === 'coordinates' && 'location' in msg) {
-      ctx.wizard.state.locationData = `${msg.location.latitude},${msg.location.longitude}`;
+    if (ctx.session.orderForm.locationType === 'coordinates' && 'location' in msg) {
+      ctx.session.orderForm.locationData = `${msg.location.latitude},${msg.location.longitude}`;
     }
     // 3. Безпечно перевіряємо наявність тексту (Варіанти 1, 3, 4 з ТЗ)
     else if ('text' in msg && msg.text) {
-      ctx.wizard.state.locationData = msg.text;
+      ctx.session.orderForm.locationData = msg.text;
     }
     // 4. Якщо прийшов не той тип даних (наприклад, користувач замість локації скинув стікер)
     else {
@@ -178,14 +238,18 @@ export class CreateOrderScene {
   /**
    * КРОК 5: Контактні дані (Ім'я, телефон)
    */
-  @WizardStep(5)
-  async step5(@Ctx() ctx: OrderWizardContext) {
+  @WizardStep(6)
+  async stepContacts(@Ctx() ctx: OrderWizardContext) {
+    if (!ctx.session.orderForm) {
+      ctx.session.orderForm = {};
+    }
+
     if (ctx.message && 'text' in ctx.message) {
-      ctx.wizard.state.customComment = ctx.message.text;
+      ctx.session.orderForm.customComment = ctx.message.text;
     }
 
     // За замовчуванням беремо ім'я з телеграму
-    ctx.wizard.state.clientName = ctx.from?.first_name ?? 'Клієнт';
+    ctx.session.orderForm.clientName = ctx.from?.first_name ?? 'Клієнт';
 
     await ctx.reply('<b>Крок 5. Поділіться контактом</b> для зв’язку з вами:', {
       parse_mode: 'HTML',
@@ -199,9 +263,13 @@ export class CreateOrderScene {
   /**
    * КРОК 6: Підтвердження заявки
    */
-  @WizardStep(6)
-  async step6(@Ctx() ctx: OrderWizardContext) {
+  @WizardStep(7)
+  async stepPhone(@Ctx() ctx: OrderWizardContext) {
     const msg = ctx.message;
+
+    if (!ctx.session.orderForm) {
+      ctx.session.orderForm = {};
+    }
 
     // 1. Перевіряємо, чи взагалі існує об'єкт повідомлення
     if (!msg) {
@@ -213,11 +281,11 @@ export class CreateOrderScene {
 
     // 2. Безпечно перевіряємо, чи це повідомлення з контактом (кнопка "Поділитися номером")
     if ('contact' in msg) {
-      ctx.wizard.state.clientPhone = msg.contact.phone_number;
+      ctx.session.orderForm.clientPhone = msg.contact.phone_number;
     }
     // 3. Безпечно перевіряємо, чи користувач ввів телефон текстом вручну
     else if ('text' in msg && msg.text) {
-      ctx.wizard.state.clientPhone = msg.text;
+      ctx.session.orderForm.clientPhone = msg.text;
     }
     // 4. Якщо прийшов невідповідний тип повідомлення
     else {
@@ -227,7 +295,7 @@ export class CreateOrderScene {
       return;
     }
 
-    const state = ctx.wizard.state;
+    const state = ctx.session.orderForm;
 
     // Виводимо резюме замовлення перед фінальним збереженням за ТЗ
     const summary =
@@ -237,7 +305,7 @@ export class CreateOrderScene {
       `📍 <b>Дані місця:</b> ${state.locationData ?? ''}\n` +
       `💬 <b>Коментар:</b> ${state.customComment ?? 'Немає'}\n` +
       `👤 <b>Клієнт:</b> ${state.clientName ?? ''}\n` +
-      `📱 <b>Телефон:</b> ${state.clientPhone ?? ''}\n\n` +
+      `📱 <b>Телефон/Контакти:</b> ${state.clientPhone ?? ''}\n\n` +
       `Все правильно?`;
 
     await ctx.reply(summary, {
@@ -259,8 +327,8 @@ export class CreateOrderScene {
   /**
    * ФІНАЛ: Збереження в Back4app
    */
-  @WizardStep(7)
-  async step7(@Ctx() ctx: OrderWizardContext) {
+  @WizardStep(8)
+  async stepSaveOrder(@Ctx() ctx: OrderWizardContext) {
     // 1. Використовуємо Type Guard, щоб TypeScript знав, що це клік по інлайн-кнопці
     if (ctx.has('callback_query') && 'data' in ctx.callbackQuery) {
       const callbackData = ctx.callbackQuery.data;
@@ -271,31 +339,37 @@ export class CreateOrderScene {
       if (callbackData === 'confirm_order_save') {
         await ctx.reply('⏳ Зберігаю вашу заявку у хмарі...');
 
-        const state = ctx.wizard.state;
+        const state = ctx.session.orderForm;
         const telegramId = ctx.from.id.toString();
 
         try {
           const newOrder = await this.ordersService.create({
-            clientName: state.clientName ?? 'Клієнт',
-            clientPhone: state.clientPhone ?? '',
+            clientName: state?.clientName ?? 'Клієнт',
+            clientPhone: state?.clientPhone ?? '',
             telegramId: telegramId,
-            serviceId: state.serviceId ?? '',
-            customComment: state.customComment,
-            locationType: state.locationType ?? 'address_text',
-            locationData: state.locationData ?? '',
-            photos: state.clientPhotos ?? [],
+            serviceId: state?.serviceId ?? '',
+            customComment: state?.customComment,
+            locationType: state?.locationType ?? 'address_text',
+            locationData: state?.locationData ?? '',
+            photos: state?.clientPhotos ?? [],
+            burialId: state?.burialId,
           });
 
           await ctx.reply(
             `🎉 <b>Заявку №${newOrder.id} успішно створено!</b>\n\n` +
-              `Адміністратор вже взяв її на перевірку. Ви отримаєте сповіщення про зміну статусу тут.`,
+            `Адміністратор вже взяв її на перевірку. Ви отримаєте сповіщення про зміну статусу тут.`,
             {
               parse_mode: 'HTML',
               reply_markup: Markup.removeKeyboard().reply_markup,
             },
           );
 
-          await this.sendOrderToAdmin(ctx.telegram, newOrder.id, state, telegramId);
+          if (state) {
+            await this.sendOrderToAdmin(newOrder.id, state, telegramId);
+          }
+
+          // 🔥 ОБОВ'ЯЗКОВО: Після успішного збереження повністю видаляємо чернетку з сесії
+          delete ctx.session.orderForm;
         } catch (error) {
           console.log(error);
           await ctx.reply(
@@ -317,48 +391,48 @@ export class CreateOrderScene {
     return ctx.scene.leave();
   }
 
-  private async sendOrderToAdmin(telegram: Telegram, orderId: string,  state: OrderWizardSession, telegramId: string) {
-      const ADMIN_BOT_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
+  private async sendOrderToAdmin(orderId: string, state: OrderForm, telegramId: string) {
+    const ADMIN_BOT_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
 
-      const adminSummary =
-        `🔔 <b>НОВА ЗАЯВКА №${orderId}</b>\n\n` +
-        `📦 <b>Послуга:</b> ${state.serviceName ?? ''}\n` +
-        `📍 <b>Місце:</b> (${state.locationType}) ${state.locationData ?? ''}\n` +
-        `👤 <b>Клієнт:</b> ${state.clientName ?? ''}\n` +
-        `📱 <b>Телефон:</b> ${state.clientPhone ?? ''}\n` +
-        `💬 <b>Коментар:</b> ${state.customComment ?? 'Немає'}`;
+    const adminSummary =
+      `🔔 <b>НОВА ЗАЯВКА №${orderId}</b>\n\n` +
+      `📦 <b>Послуга:</b> ${state.serviceName ?? ''}\n` +
+      `📍 <b>Місце:</b> (${state.locationType ?? ''}) ${state.locationData ?? ''}\n` +
+      `👤 <b>Клієнт:</b> ${state.clientName ?? ''}\n` +
+      `📱 <b>Телефон:</b> ${state.clientPhone ?? ''}\n` +
+      `💬 <b>Коментар:</b> ${state.customComment ?? 'Немає'}`;
 
-      const adminButtons = Markup.inlineKeyboard([
-        [
-          Markup.button.callback('✅ Підтвердити', `admin_confirm_${orderId}_${telegramId}`),
-          Markup.button.callback('❌ Відхилити', `admin_reject_${orderId}_${telegramId}`),
-        ],
-        [
-          Markup.button.callback('🔍 Уточнити', `admin_clarify_${orderId}_${telegramId}`)
-        ]
-      ]).reply_markup;
+    const adminButtons = Markup.inlineKeyboard([
+      [
+        Markup.button.callback('✅ Підтвердити', `admin_confirm_${orderId}_${telegramId}`),
+        Markup.button.callback('❌ Відхилити', `admin_reject_${orderId}_${telegramId}`),
+      ],
+      [
+        Markup.button.callback('🔍 Уточнити', `admin_clarify_${orderId}_${telegramId}`)
+      ]
+    ]).reply_markup;
 
-      try {
-        // 3. Надсилаємо адміну (з фото, якщо воно є, або просто текстом)
-        if (state.clientPhotos && state.clientPhotos.length > 0) {
-          // Беремо перше фото з масиву для головної картки з кнопками
-          const mainPhoto = state.clientPhotos[0];
+    try {
+      // 3. Надсилаємо адміну (з фото, якщо воно є, або просто текстом)
+      if (state.clientPhotos && state.clientPhotos.length > 0) {
+        // Беремо перше фото з масиву для головної картки з кнопками
+        const mainPhoto = state.clientPhotos[0];
 
-          await this.adminBot.telegram.sendPhoto(ADMIN_BOT_CHAT_ID, mainPhoto, {
-            caption: adminSummary,
-            parse_mode: 'HTML',
-            reply_markup: adminButtons,
-          });
-        } else {
-          await this.adminBot.telegram.sendMessage(ADMIN_BOT_CHAT_ID, adminSummary, {
-            parse_mode: 'HTML',
-            reply_markup: adminButtons,
-          });
-        }
-        console.log('🚀 Картку успішно відправлено адмін-ботом!');
-      } catch (error) {
-        console.error('❌ Помилка відправки через адмін-бота:', error);
+        await this.adminBot.telegram.sendPhoto(ADMIN_BOT_CHAT_ID, mainPhoto, {
+          caption: adminSummary,
+          parse_mode: 'HTML',
+          reply_markup: adminButtons,
+        });
+      } else {
+        await this.adminBot.telegram.sendMessage(ADMIN_BOT_CHAT_ID, adminSummary, {
+          parse_mode: 'HTML',
+          reply_markup: adminButtons,
+        });
       }
+      console.log('🚀 Картку успішно відправлено адмін-ботом!');
+    } catch (error) {
+      console.error('❌ Помилка відправки через адмін-бота:', error);
+    }
   }
 
 }

@@ -93,4 +93,8 @@ export class CreateOrderDto {
   @IsString({ each: true }) // Перевіряє, що кожен елемент масиву є рядком
   @IsOptional()
   photos?: string[];
+
+  @IsOptional()
+  @IsString()
+  burialId?: string;
 }
