@@ -25,7 +25,7 @@ FROM node:22-alpine AS runner
 WORKDIR /usr/src/app
 
 # Переносимо змінні оточення за замовчуванням
-NODE_ENV=production
+#NODE_ENV=production
 
 # Копіюємо package.json та package-lock.json
 COPY package*.json ./
