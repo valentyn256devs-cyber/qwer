@@ -2,6 +2,7 @@ import { Wizard, WizardStep, Ctx } from 'nestjs-telegraf';
 import { Markup } from 'telegraf';
 import { BurialsService } from '../../../burials/burials.service';
 import {type OrderWizardContext, OrderWizardSession} from "../interfaces/order-wizard-context.interface";
+import {OrderStepUa} from "../../telegram-constants";
 
 @Wizard('CREATE_BURIAL_WIZARD')
 export class CreateBurialScene {
@@ -13,7 +14,7 @@ export class CreateBurialScene {
   @WizardStep(1)
   async step1(@Ctx() ctx: OrderWizardContext) {
     await ctx.reply(
-      '✍️ <b>Вкажіть довільну назву для цього місця поховання:</b>\n<i>(Наприклад: "Могила дідуся", "Сімейне місце")</i>',
+      OrderStepUa.HintBurialLocation,
       { parse_mode: 'HTML', reply_markup: Markup.removeKeyboard().reply_markup }
     );
     ctx.wizard.next();
@@ -26,7 +27,7 @@ export class CreateBurialScene {
   async step2(@Ctx() ctx: OrderWizardContext) {
     if (ctx.message && 'text' in ctx.message) {
       ctx.wizard.state.burialTemp = { name: ctx.message.text };
-      await ctx.reply('✍️ <b>Введіть Прізвище померлого:</b>', { parse_mode: 'HTML' });
+      await ctx.reply(OrderStepUa.HintBurialLastName, { parse_mode: 'HTML' });
       ctx.wizard.next();
     } else {
       await ctx.reply('Будь ласка, введіть текст.');
@@ -44,7 +45,7 @@ export class CreateBurialScene {
       }
 
       ctx.wizard.state.burialTemp.burialLastName = ctx.message.text;
-      await ctx.reply('✍️ <b>Введіть Ім’я померлого:</b>', { parse_mode: 'HTML' });
+      await ctx.reply(OrderStepUa.HintBurialName, { parse_mode: 'HTML' });
       ctx.wizard.next();
     }
   }
@@ -60,7 +61,7 @@ export class CreateBurialScene {
       }
 
       ctx.wizard.state.burialTemp.burialName = ctx.message.text;
-      await ctx.reply('✍️ <b>Введіть По батькові померлого:</b>', { parse_mode: 'HTML' });
+      await ctx.reply(OrderStepUa.HintBurialFatherName, { parse_mode: 'HTML' });
       ctx.wizard.next();
     }
   }
@@ -78,7 +79,7 @@ export class CreateBurialScene {
       ctx.wizard.state.burialTemp.burialFatherName = ctx.message.text;
 
       await ctx.reply(
-        '📅 <b>Введіть дату народження у форматі ДД.ММ.РРРР:</b>\n<i>(Або натисніть кнопку "Пропустити ➡️")</i>',
+        OrderStepUa.HintBurialDateBirthday,
         {
           parse_mode: 'HTML',
           reply_markup: Markup.keyboard([['Пропустити ➡️']]).resize().oneTime().reply_markup,
@@ -104,7 +105,7 @@ export class CreateBurialScene {
       }
 
       await ctx.reply(
-        '📅 <b>Введіть дату смерті у форматі ДД.ММ.РРРР:</b>\n<i>(Або натисніть кнопку "Пропустити ➡️")</i>',
+        OrderStepUa.HintBurialDateDied,
         {
           parse_mode: 'HTML',
           reply_markup: Markup.keyboard([['Пропустити ➡️']]).resize().oneTime().reply_markup,
@@ -128,7 +129,7 @@ export class CreateBurialScene {
         ctx.wizard.state.burialTemp.deathDate = this.parseDate(text);
       }
 
-      await ctx.reply('🏛 <b>Вкажіть назву кладовища, сектор або населений пункт:</b>', {
+      await ctx.reply(OrderStepUa.HintBurialPlaceLocation, {
         parse_mode: 'HTML',
         reply_markup: Markup.removeKeyboard().reply_markup,
       });

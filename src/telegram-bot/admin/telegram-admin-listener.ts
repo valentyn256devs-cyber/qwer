@@ -1,6 +1,7 @@
 import {Action, Ctx, Start, Update} from "nestjs-telegraf";
 import {OrdersService} from "../../orders/orders.service";
 import {Context} from "telegraf";
+import {OrderStepUa} from "../telegram-constants";
 
 @Update()
 export class TelegramAdminListener {
@@ -13,8 +14,7 @@ export class TelegramAdminListener {
   @Start()
   async onStart(@Ctx() ctx: Context) {
     await ctx.reply(
-      '🛡️ <b>Панель адміністратора ДОГЛЯД+</b>\n\n' +
-      'Сюди надходитимуть нові заявки від клієнтів. Ви зможете керувати їхніми статусами за допомогою інлайн-кнопок під картками замовлень.',
+      OrderStepUa.AdminWelcome + OrderStepUa.AdminWelcomeDescription,
       { parse_mode: 'HTML' }
     );
   }
