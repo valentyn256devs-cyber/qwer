@@ -9,7 +9,7 @@ import { OrderTable } from './models/order-table';
 import { OrderStatus } from './models/order-status';
 import { CreateOrderDto } from './dto/create-order.dto';
 import {InjectBot} from "nestjs-telegraf";
-import {TelegramBot} from "../telegram-bot/telegram-constants";
+import {mainMenuButtons, TelegramBot} from "../telegram-bot/telegram-constants";
 import {Context, Telegraf} from "telegraf";
 
 @Injectable()
@@ -34,6 +34,7 @@ export class OrdersService {
       locationType,
       locationData,
       cemeteryDetails,
+      burialId,
     } = createOrderDto;
 
     const servicePointer = Parse.Object.fromJSON({
@@ -52,6 +53,7 @@ export class OrdersService {
     order.set(OrderTable.Fields.LocationType, locationType);
     order.set(OrderTable.Fields.LocationData, locationData);
     order.set(OrderTable.Fields.CemeteryDetails, cemeteryDetails ?? '');
+    order.set(OrderTable.Fields.BurialId, burialId ?? '');
 
     // Ініціалізуємо порожні масиви для майбутніх фотозвітів
     order.set(OrderTable.Fields.ClientPhotos, []);
@@ -194,7 +196,7 @@ export class OrdersService {
       clientId,
       `🟢 <b>Вашу заявку №${orderId} успішно підтверджено адміністратором!</b>\n\n` +
       `Ми вже взялися за виконання роботи. Очікуйте на фотозвіт.`,
-      { parse_mode: 'HTML' }
+      { parse_mode: 'HTML', reply_markup: mainMenuButtons }
     );
 
     return updatedOrder;
@@ -210,7 +212,7 @@ export class OrdersService {
       clientId,
       `🔴 <b>На жаль, вашу заявку №${orderId} було відхилено.</b>\n\n` +
       `Для уточнення деталей або якщо виникла помилка, будь ласка, зв'яжіться з нашою підтримкою або натисніть /help.`,
-      { parse_mode: 'HTML' }
+      { parse_mode: 'HTML', reply_markup: mainMenuButtons }
     );
 
     return updatedOrder;
@@ -233,7 +235,6 @@ export class OrdersService {
   }
 
   private mapOrderFields(order: Parse.Object) {
-    // const service = order.get(OrderTable.Fields.Service);
     const service = order.get(OrderTable.Fields.Service) as
       | Parse.Object
       | undefined;
@@ -249,6 +250,7 @@ export class OrdersService {
       status: order.get(OrderTable.Fields.Status) as OrderStatus,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
+      burialName: order.get('name') as string, // burialName
       client: {
         name: order.get(OrderTable.Fields.ClientName) as string,
         phone: order.get(OrderTable.Fields.ClientPhone) as string,
@@ -267,6 +269,7 @@ export class OrdersService {
         locationType: order.get(OrderTable.Fields.LocationType) as string,
         locationData: order.get(OrderTable.Fields.LocationData) as string,
         cemeteryDetails: order.get(OrderTable.Fields.CemeteryDetails) as string,
+        burialId: order.get(OrderTable.Fields.BurialId) as string,
       },
       report: {
         clientPhotos: getUrls(

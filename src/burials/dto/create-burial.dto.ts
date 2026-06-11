@@ -1,4 +1,5 @@
-import { IsString, IsOptional, IsNotEmpty, IsDateString } from 'class-validator';
+import {IsString, IsOptional, IsNotEmpty, IsArray, ValidateNested} from 'class-validator';
+import {Type} from "class-transformer";
 
 export class CreateBurialDto {
   @IsString()
@@ -17,13 +18,13 @@ export class CreateBurialDto {
   @IsOptional()
   burialFatherName?: string;
 
-  @IsDateString()
+  @IsString()
   @IsOptional()
-  birthDate?: string;
+  birthDate?: string | null;
 
-  @IsDateString()
+  @IsString()
   @IsOptional()
-  deathDate?: string;
+  deathDate?: string | null;
 
   @IsString()
   @IsNotEmpty()
@@ -39,9 +40,30 @@ export class CreateBurialDto {
 
   @IsString()
   @IsOptional()
+  nickName?: string;
+
+  @IsString()
+  @IsOptional()
   notes?: string;
 
   // Для фото, які приходять з боту у форматі base64
+/*  @IsArray()
   @IsOptional()
-  photos?: { name: string; base64: string }[];
+  photos?: string[];*/
+
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true }) // 🔥 Кажемо валідувати кожен елемент масиву
+  @Type(() => BurialPhotoDto)     // 🔥 Вказуємо тип для трансформації
+  photos?: BurialPhotoDto[];
+}
+
+export class BurialPhotoDto {
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @IsString()
+  @IsNotEmpty()
+  base64: string;
 }

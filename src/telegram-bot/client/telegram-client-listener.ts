@@ -3,13 +3,15 @@ import { OrdersService } from '../../orders/orders.service';
 import { ServicesService } from '../../services/services.service';
 import {Context, Markup} from 'telegraf';
 import { type OrderWizardContext } from './interfaces/order-wizard-context.interface';
-import {MainMenu, OrderStepUa, Scene} from "../telegram-constants";
+import {MainMenu, mainMenuButtons, OrderStepUa, Scene} from "../telegram-constants";
+import {BurialsService} from "../../burials/burials.service";
 
 @Update()
 export class TelegramClientListener {
   constructor(
     private readonly ordersService: OrdersService,
     private readonly servicesService: ServicesService,
+    private readonly burialsService: BurialsService,
   ) {}
 
   /**
@@ -69,8 +71,8 @@ export class TelegramClientListener {
 
       const inlineButtons = services.map((s, index) => {
         // Формат: "1. Тест (200 грн)"
-        // const shortDesc = s.description ? s.description.replace(/<\/?[^>]+(>|$)/g, "") : 'Опис відсутній';
-        const buttonText = `${index + 1}. ${s.name} (${s.price} грн)`;
+        const shortDesc = s.description ? s.description.replace(/<\/?[^>]+(>|$)/g, "") : 'Опис відсутній';
+        const buttonText = `${index + 1}. ${s.name} (${s.price} грн) - ${shortDesc}`;
 
         // Обрізаємо текст кнопки, якщо він перевищує 64 символи (ліміт Telegram для гарного відображення на мобільних)
         const finalText = buttonText.length > 60 ? `${buttonText.substring(0, 57)}...` : buttonText;
@@ -114,12 +116,49 @@ export class TelegramClientListener {
       return;
     }
 
-    let response = OrderStepUa.YourOrders;
-    orders.forEach((o) => {
-      response += `🔹 <b>Заявка №${o.id}</b>\nСтатус: ${o.status}\nПослуга: ${o.service?.name ?? 'Кастомна'}\n\n`;
+    // Форматер для гарного відображення дати
+    const dateFormatter = new Intl.DateTimeFormat('uk-UA', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
     });
 
-    await ctx.reply(response, { parse_mode: 'HTML' });
+    const CHUNK_SIZE = 5; // Розмір однієї пачки
+
+    // Ділимо масив orders на пачки по 5 штук
+    for (let i = 0; i < orders.length; i += CHUNK_SIZE) {
+      const chunk = orders.slice(i, i + CHUNK_SIZE);
+
+      // Розраховуємо номери замовлень для заголовка (наприклад, "1-5 із 12")
+      const fromIndex = i + 1;
+      const toIndex = Math.min(i + CHUNK_SIZE, orders.length);
+
+      let response = `<b>🗂 ${OrderStepUa.YourOrders} (Записи ${fromIndex}–${toIndex} із ${orders.length}):</b>\n\n`;
+
+      for (const o of chunk) {
+        // Форматуємо дату з Parse / Prisma, якщо вона є
+        const dateStr = o.createdAt ? dateFormatter.format(new Date(o.createdAt)) : 'Невідомо';
+        const burialRec = await this.burialsService.findBurialById(o.details.burialId);
+        const burialPlaceName = burialRec?.name || 'Не вказано';
+
+        response += `🔹 <b>Заявка №${o.id}</b>\n`;
+        response += `📅 <b>Створено:</b> <code>${dateStr}</code>\n`;
+        response += `🪦 <b>Місце пам'яті:</b> ${burialPlaceName}\n`;
+        response += `📦 <b>Послуга:</b> ${o.service?.name ?? 'Індивідуальна'}\n`;
+        response += `⚙️ <b>Статус:</b> ${o.status}\n\n`;
+      }
+
+      // Відправляємо кожну пачку окремим повідомленням
+      await ctx.reply(response, {parse_mode: 'HTML'});
+
+      // Невеличка штучна затримка між повідомленнями (опціонально),
+      // щоб Telegram не заблокував за спам флуд-контролем, якщо пачок дуже багато
+      if (orders.length > CHUNK_SIZE) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+    }
   }
 
   /**
@@ -173,14 +212,7 @@ export class TelegramClientListener {
 
     // Видаляємо інлайн-кнопки або старе повідомлення, щоб не засмічувати чат
     await ctx.deleteMessage().catch(() => null);
-
-    const mainMenu = Markup.keyboard([
-      [MainMenu.Services],
-      [MainMenu.CreateOrder],
-      [MainMenu.MyOrders, MainMenu.Help],
-    ]).resize().reply_markup;
-
-    await ctx.reply('Повертаємось до головного меню:', { reply_markup: mainMenu });
+    await ctx.reply(OrderStepUa.ReturnToMainMenu, { reply_markup: mainMenuButtons });
   }
 
   /**

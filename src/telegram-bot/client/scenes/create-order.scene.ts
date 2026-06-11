@@ -3,13 +3,15 @@ import {Context, Markup, Telegraf} from 'telegraf';
 import {ServicesService} from '../../../services/services.service';
 import {OrdersService} from '../../../orders/orders.service';
 import {OrderForm, type OrderWizardContext} from '../interfaces/order-wizard-context.interface';
-import {BurialMenu, MainMenu, OrderStepUa, Scene, Step, TelegramBot} from "../../telegram-constants";
+import {BurialMenu, mainMenuButtons, OrderStepUa, Scene, Step, TelegramBot} from "../../telegram-constants";
+import {BurialsService} from "../../../burials/burials.service";
 
 @Wizard(Scene.CREATE_ORDER_WIZARD)
 export class CreateOrderScene {
   constructor(
     private readonly ordersService: OrdersService,
     private readonly servicesService: ServicesService,
+    private readonly burialsService: BurialsService,
     @InjectBot(TelegramBot.AdminBot)
     private readonly adminBot: Telegraf<Context>,
   ) {
@@ -54,8 +56,21 @@ export class CreateOrderScene {
       }
 
       // Створюємо інлайн-кнопки з послугами з бази Back4app
-      const buttons = services.map((s) => [
-        Markup.button.callback(`${s.name} (${s.price} грн)`, `service_${s.id}`),
+      const buttons = services.map((s, index) => {
+        // Формат: "1. Тест (200 грн)"
+        const shortDesc = s.description ? s.description.replace(/<\/?[^>]+(>|$)/g, "") : 'Опис відсутній';
+        const buttonText = `${index + 1}. ${s.name} (${s.price} грн) - ${shortDesc}`;
+
+        // Обрізаємо текст кнопки, якщо він перевищує 64 символи (ліміт Telegram для гарного відображення на мобільних)
+        const finalText = buttonText.length > 60 ? `${buttonText.substring(0, 57)}...` : buttonText;
+        return [
+          Markup.button.callback(finalText, `service_${s.id}`),
+        ];
+      });
+
+      // Кнопка повернення назад до головного меню
+      buttons.push([
+        Markup.button.callback(OrderStepUa.GoBack, 'client_back_to_menu'),
       ]);
 
       await ctx.reply(Step.Step1, {
@@ -98,6 +113,14 @@ export class CreateOrderScene {
         // 🔥 ПЕРЕХІД: Одразу викликаємо інший візард
         await ctx.reply(OrderStepUa.FillCard );
         return ctx.scene.enter(Scene.CREATE_BURIAL_WIZARD);
+      } // press back to menu
+      else if (callbackData.startsWith('client_back_to_menu')) {
+        const id = ctx.callbackQuery?.id ?? '-'
+        await ctx.telegram.answerCbQuery(id);
+        // Видаляємо інлайн-кнопки або старе повідомлення, щоб не засмічувати чат
+        await ctx.deleteMessage().catch(() => null);
+        await this.showMainMenu(ctx);
+        return ctx.scene.leave();
       }
     }
 
@@ -129,7 +152,7 @@ export class CreateOrderScene {
     }
 
     // 4. Виводимо клавіатуру вибору локації за ТЗ
-    await ctx.reply(Step.Step2, {
+    await ctx.reply(Step.Step3, {
       parse_mode: 'HTML',
       reply_markup: Markup.keyboard([
         [BurialMenu.Geo, BurialMenu.GoogleMap],
@@ -272,8 +295,11 @@ export class CreateOrderScene {
 
     // Рухаємось далі до опису завдання (коментаря)
     await ctx.reply(
-      Step.Step3,
-      { parse_mode: 'HTML' },
+      Step.Step4,
+      {
+        parse_mode: 'HTML',
+        reply_markup: Markup.keyboard([[OrderStepUa.Skip]]).resize().oneTime().reply_markup,
+      },
     );
 
     // Переводимо курсор на Крок 7 (метод stepContacts)
@@ -290,13 +316,16 @@ export class CreateOrderScene {
     }
 
     if (ctx.message && 'text' in ctx.message) {
-      ctx.session.orderForm.customComment = ctx.message.text;
+      const text = ctx.message.text;
+      if (text !== OrderStepUa.Skip) {
+        ctx.session.orderForm.customComment = ctx.message.text;
+      } else ctx.session.orderForm.customComment = '';
     }
 
     // За замовчуванням беремо ім'я з телеграму
     ctx.session.orderForm.clientName = ctx.from?.first_name ?? 'Клієнт';
 
-    await ctx.reply(Step.Step4, {
+    await ctx.reply(Step.Step5, {
       parse_mode: 'HTML',
       reply_markup: Markup.keyboard([
         [Markup.button.contactRequest(OrderStepUa.SendMyPhone)],
@@ -336,13 +365,16 @@ export class CreateOrderScene {
       return;
     }
 
+    await ctx.reply('⏳ Формую резюме заявки...', Markup.removeKeyboard()).catch(() => null);
+
     const state = ctx.session.orderForm;
 
     // Виводимо резюме замовлення перед фінальним збереженням за ТЗ
     const summary =
       `📝 <b>ПЕРЕВІРКА ЗАЯВКИ</b>\n\n` +
+      `📦 <b>Назва:</b> ${state.burialDisplayName ?? ''}\n` +
       `📦 <b>Послуга:</b> ${state.serviceName ?? ''}\n` +
-      `📍 <b>Тип локації:</b> ${state.locationType ?? ''}\n` +
+      // `📍 <b>Тип локації:</b> ${state.locationType ?? ''}\n` +
       `📍 <b>Дані місця:</b> ${state.locationData ?? ''}\n` +
       `💬 <b>Коментар:</b> ${state.customComment ?? 'Немає'}\n` +
       `👤 <b>Клієнт:</b> ${state.clientName ?? ''}\n` +
@@ -353,10 +385,7 @@ export class CreateOrderScene {
       parse_mode: 'HTML',
       reply_markup: Markup.inlineKeyboard([
         [
-          Markup.button.callback(
-            '✅ Підтверджую і Створюю',
-            'confirm_order_save',
-          ),
+          Markup.button.callback(OrderStepUa.ApproveAndCreate, 'confirm_order_save'),
         ],
         [Markup.button.callback(OrderStepUa.Cancel, 'cancel_order_wizard')],
       ]).reply_markup,
@@ -378,6 +407,9 @@ export class CreateOrderScene {
       await ctx.telegram.answerCbQuery(ctx.callbackQuery.id);
 
       if (callbackData === 'confirm_order_save') {
+        // Передаємо порожній inlineKeyboard, щоб кнопки миттєво зникли
+        await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
+
         await ctx.reply(OrderStepUa.SavingOrder);
 
         const state = ctx.session.orderForm;
@@ -416,6 +448,8 @@ export class CreateOrderScene {
           await ctx.reply(OrderStepUa.ErrorSavingOrder);
         }
       } else {
+        // Передаємо порожній inlineKeyboard, щоб кнопки миттєво зникли
+        await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
         await ctx.reply(OrderStepUa.OrderCanceled, Markup.removeKeyboard(),);
       }
     } else {
@@ -430,23 +464,62 @@ export class CreateOrderScene {
 
   private async sendOrderToAdmin(orderId: string, state: OrderForm, telegramId: string) {
     const ADMIN_BOT_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
+    const burialData = await this.burialsService.findBurialById(state.burialId);
 
-    const adminSummary =
-      `🔔 <b>НОВА ЗАЯВКА №${orderId}</b>\n\n` +
-      `📦 <b>Послуга:</b> ${state.serviceName ?? ''}\n` +
-      `📍 <b>Місце:</b> (${state.locationType ?? ''}) ${state.locationData ?? ''}\n` +
-      `👤 <b>Клієнт:</b> ${state.clientName ?? ''}\n` +
-      `📱 <b>Телефон:</b> ${state.clientPhone ?? ''}\n` +
-      `💬 <b>Коментар:</b> ${state.customComment ?? 'Немає'}`;
+    // Форматер для відображення дат анкети
+    const dateFormatter = new Intl.DateTimeFormat('uk-UA', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+
+    // 2. Формуємо базове резюме замовлення
+    let adminSummary = `🔔 <b>НОВА ЗАЯВКА №${orderId}</b>\n\n`;
+    adminSummary += `📦 <b>Послуга:</b> ${state.serviceName ?? 'Індивідуальна'}\n`;
+    adminSummary += `📍 <b>Місце:</b> ${state.locationData ?? ''}\n`;
+    // adminSummary += `📍 <b>Місце:</b> (${state.locationType ?? 'Текст'}) ${state.locationData ?? ''}\n`;
+    if (state.cemeteryDetails) {
+      adminSummary += `🏛 <b>Деталі цвинтаря:</b> ${state.cemeteryDetails}\n`;
+    }
+    adminSummary += `💬 <b>Коментар:</b> ${state.customComment ?? 'Немає'}\n\n`;
+
+    // 🪦 ЯКЩО ПРИВ'ЯЗАНО АНКЕТУ ПОХОВАННЯ — РОЗШИРЮЄМО ОПИС
+    if (burialData) {
+      const bName = burialData.burialName ?? '—';
+      const bLastName = burialData.burialLastName ?? '—';
+      const bFatherName = burialData.burialFatherName ?? '—';
+
+      const birthStr = burialData.birthDate ? dateFormatter.format(new Date(burialData.birthDate)) : 'Невідомо';
+      const deathStr = burialData.deathDate ? dateFormatter.format(new Date(burialData.deathDate)) : 'Невідомо';
+
+      adminSummary += `🪦 <b>ДАНІ МІСЦЯ ПАМ'ЯТІ:</b>\n`;
+      adminSummary += `👤 <b>Покійний:</b> ${bLastName} ${bName} ${bFatherName}\n`;
+      adminSummary += `📅 <b>Роки життя:</b> ${birthStr} — ${deathStr}\n`;
+      // adminSummary += `🏛 <b>Цвинтар:</b> ${burialData.cemetery ?? 'Не вказано'}\n`;
+      if (burialData.coordinates) {
+        adminSummary += `🌐 <b>Координати:</b> <code>${burialData.coordinates}</code>\n`;
+      }
+      // if (burialData.notes) {
+      //   adminSummary += `📝 <b>Нотатки анкети:</b> <i>${burialData.notes}</i>\n`;
+      // }
+      adminSummary += `\n`;
+    }
+
+    // Додаємо дані клієнта наприкінці
+    adminSummary += `👤 <b>КЛІЄНТ:</b>\n`;
+    adminSummary += `▪️ <b>Ім'я:</b> ${state.clientName ?? 'Не вказано'}\n`;
+    adminSummary += `▪️ <b>Телефон:</b> ${state.clientPhone ?? 'Немає номера'}\n`;
+    if (state.clientNickName) adminSummary += `▪️ <b>Username:</b> @${state.clientNickName.replace('@', '')}\n`;
+    if (state.clientEmail) adminSummary += `▪️ <b>Email:</b> ${state.clientEmail}\n`;
 
     const adminButtons = Markup.inlineKeyboard([
       [
-        Markup.button.callback('✅ Підтвердити', `admin_confirm_${orderId}_${telegramId}`),
-        Markup.button.callback('❌ Відхилити', `admin_reject_${orderId}_${telegramId}`),
+        Markup.button.callback(OrderStepUa.Approve, `admin_confirm_${orderId}_${telegramId}`),
+        Markup.button.callback(OrderStepUa.Reject, `admin_reject_${orderId}_${telegramId}`),
       ],
-      [
+      /*[
         Markup.button.callback('🔍 Уточнити', `admin_clarify_${orderId}_${telegramId}`)
-      ]
+      ]*/
     ]).reply_markup;
 
     try {
@@ -473,14 +546,8 @@ export class CreateOrderScene {
   }
 
   private async showMainMenu(ctx: Context, ) {
-    const mainMenu = Markup.keyboard([
-      [MainMenu.Services],
-      [MainMenu.CreateOrder],
-      [MainMenu.MyOrders, MainMenu.Help],
-    ]).resize().reply_markup;
-
     // 🔥 ГОЛОВНИЙ ФІКС 2: Повертаємо головне меню при скасуванні
-    await ctx.reply(OrderStepUa.MainMenu, { reply_markup: mainMenu },);
+    await ctx.reply(OrderStepUa.MainMenu, { reply_markup: mainMenuButtons },);
   }
 
 }

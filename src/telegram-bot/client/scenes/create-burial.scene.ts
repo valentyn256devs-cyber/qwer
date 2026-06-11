@@ -2,9 +2,9 @@ import { Wizard, WizardStep, Ctx } from 'nestjs-telegraf';
 import { Markup } from 'telegraf';
 import { BurialsService } from '../../../burials/burials.service';
 import {type OrderWizardContext, OrderWizardSession} from "../interfaces/order-wizard-context.interface";
-import {OrderStepUa} from "../../telegram-constants";
+import {OrderStepUa, Scene, Step} from "../../telegram-constants";
 
-@Wizard('CREATE_BURIAL_WIZARD')
+@Wizard(Scene.CREATE_BURIAL_WIZARD)
 export class CreateBurialScene {
   constructor(private readonly burialsService: BurialsService) {}
 
@@ -13,6 +13,8 @@ export class CreateBurialScene {
    */
   @WizardStep(1)
   async step1(@Ctx() ctx: OrderWizardContext) {
+    await ctx.reply(Step.Step2, { parse_mode: 'HTML' });
+
     await ctx.reply(
       OrderStepUa.HintBurialLocation,
       { parse_mode: 'HTML', reply_markup: Markup.removeKeyboard().reply_markup }
@@ -45,7 +47,9 @@ export class CreateBurialScene {
       }
 
       ctx.wizard.state.burialTemp.burialLastName = ctx.message.text;
-      await ctx.reply(OrderStepUa.HintBurialName, { parse_mode: 'HTML' });
+      await ctx.reply(OrderStepUa.HintBurialName, {
+        parse_mode: 'HTML',
+      });
       ctx.wizard.next();
     }
   }
@@ -55,13 +59,26 @@ export class CreateBurialScene {
    */
   @WizardStep(4)
   async step4(@Ctx() ctx: OrderWizardContext) {
-    if (ctx.message && 'text' in ctx.message) {
+    /*if (ctx.message && 'text' in ctx.message) {
       if (!ctx.wizard.state.burialTemp) {
         ctx.wizard.state.burialTemp = {};
       }
 
       ctx.wizard.state.burialTemp.burialName = ctx.message.text;
       await ctx.reply(OrderStepUa.HintBurialFatherName, { parse_mode: 'HTML' });
+      ctx.wizard.next();
+    }*/
+
+    if (ctx.message && 'text' in ctx.message) {
+      if (!ctx.wizard.state.burialTemp) {
+        ctx.wizard.state.burialTemp = {};
+      }
+
+      ctx.wizard.state.burialTemp.burialName = ctx.message.text;
+      await ctx.reply(OrderStepUa.HintBurialFatherName, {
+        parse_mode: 'HTML',
+        reply_markup: Markup.keyboard([[OrderStepUa.Skip]]).resize().oneTime().reply_markup,
+      });
       ctx.wizard.next();
     }
   }
@@ -76,13 +93,15 @@ export class CreateBurialScene {
         ctx.wizard.state.burialTemp = {};
       }
 
-      ctx.wizard.state.burialTemp.burialFatherName = ctx.message.text;
+      if (ctx.message.text === OrderStepUa.Skip) {
+        ctx.wizard.state.burialTemp.burialFatherName = '';
+      } else ctx.wizard.state.burialTemp.burialFatherName = ctx.message.text;
 
       await ctx.reply(
         OrderStepUa.HintBurialDateBirthday,
         {
           parse_mode: 'HTML',
-          reply_markup: Markup.keyboard([['Пропустити ➡️']]).resize().oneTime().reply_markup,
+          reply_markup: Markup.keyboard([[OrderStepUa.Skip]]).resize().oneTime().reply_markup,
         }
       );
       ctx.wizard.next();
@@ -96,19 +115,22 @@ export class CreateBurialScene {
   async step6(@Ctx() ctx: OrderWizardContext) {
     if (ctx.message && 'text' in ctx.message) {
       const text = ctx.message.text;
-      if (text !== 'Пропустити ➡️') {
+      if (text !== OrderStepUa.Skip) {
         if (!ctx.wizard.state.burialTemp) {
           ctx.wizard.state.burialTemp = {};
         }
 
         ctx.wizard.state.burialTemp.birthDate = this.parseDate(text);
+      } else {
+        await ctx.reply(OrderStepUa.HintBurialDateMMYYYY, { parse_mode: 'HTML' });
+        return;
       }
 
       await ctx.reply(
         OrderStepUa.HintBurialDateDied,
         {
           parse_mode: 'HTML',
-          reply_markup: Markup.keyboard([['Пропустити ➡️']]).resize().oneTime().reply_markup,
+          reply_markup: Markup.keyboard([[OrderStepUa.Skip]]).resize().oneTime().reply_markup,
         }
       );
       ctx.wizard.next();
@@ -122,18 +144,23 @@ export class CreateBurialScene {
   async step7(@Ctx() ctx: OrderWizardContext) {
     if (ctx.message && 'text' in ctx.message) {
       const text = ctx.message.text;
-      if (text !== 'Пропустити ➡️') {
+      if (text !== OrderStepUa.Skip) {
         if (!ctx.wizard.state.burialTemp) {
           ctx.wizard.state.burialTemp = {};
         }
         ctx.wizard.state.burialTemp.deathDate = this.parseDate(text);
+      } else {
+        await ctx.reply(OrderStepUa.HintBurialDateMMYYYY, { parse_mode: 'HTML' });
+        return;
       }
 
-      await ctx.reply(OrderStepUa.HintBurialPlaceLocation, {
+      await ctx.reply(OrderStepUa.SaveBurial, {
         parse_mode: 'HTML',
         reply_markup: Markup.removeKeyboard().reply_markup,
       });
-      ctx.wizard.next();
+      // ctx.wizard.next();
+      ctx.wizard.selectStep(7);
+      return this.step8(ctx);
     }
   }
 
@@ -147,9 +174,9 @@ export class CreateBurialScene {
         ctx.wizard.state.burialTemp = {};
       }
 
-      ctx.wizard.state.burialTemp.cemetery = ctx.message.text;
-
-      await ctx.reply('⏳ Зберігаю дані про поховання у базі...');
+      ctx.wizard.state.burialTemp.cemetery = '';
+      // ctx.wizard.state.burialTemp.cemetery = ctx.message.text;
+      // await ctx.reply(OrderStepUa.SaveBurial);
 
       try {
         const temp = ctx.wizard.state.burialTemp;
@@ -163,7 +190,7 @@ export class CreateBurialScene {
           birthDate: temp.birthDate,
           deathDate: temp.deathDate,
           cemetery: temp.cemetery,
-          telegramId: ctx.from?.id.toString(),
+          telegramId: ctx.from?.id.toString() ?? ctx.from?.username,
           coordinates: '', // Можна буде додати згодом або взяти з кроків замовлення
           notes: 'Створено під час оформлення заявки',
         });
@@ -175,12 +202,12 @@ export class CreateBurialScene {
         if (orderSession) {
           ctx.session.pendingBurial = {
             id: newBurial.id,
-            displayName: `${temp.burialLastName} ${temp.burialName}`,
+            displayName: temp.name ?? '', //`${temp.burialLastName} ${temp.burialName}`,
           }
         }
 
         // Повертаємо користувача назад в сцену замовлення
-        await ctx.scene.enter('CREATE_ORDER_WIZARD');
+        await ctx.scene.enter(Scene.CREATE_ORDER_WIZARD);
       } catch (error) {
         console.error(error);
         await ctx.reply('Сталася помилка при збереженні поховання. Спробуйте заново.');
@@ -191,10 +218,30 @@ export class CreateBurialScene {
 
   private parseDate(dateStr: string): string | undefined {
     const parts = dateStr.split('.');
-    if (parts.length === 3) {
-      // Перетворюємо ДД.ММ.РРРР в ISO формат YYYY-MM-DD для DTO
-      return `${parts[2]}-${parts[1]}-${parts[0]}`;
+
+    // Варіант А: Прийшло лише ММ.РРРР або ДД.РРРР (2 частини, наприклад "06.2026")
+    if (parts.length === 2) {
+      const monthOrDay = parts[0].padStart(2, '0');
+      const year = parts[1];
+
+      // Примусово робимо перший день цього місяця/року: YYYY-MM-01
+      return `${year}-${monthOrDay}-01`;
     }
+
+    // Варіант Б: Прийшла повна дата ДД.ММ.РРРР (3 частини, наприклад "11.06.2026")
+    else if (parts.length === 3) {
+      const day = parts[0].padStart(2, '0');
+      const month = parts[1].padStart(2, '0');
+      const year = parts[2];
+
+      return `${year}-${month}-${day}`;
+    }
+
+    // Варіант В: Якщо користувач ввів взагалі лише рік "2026" (1 частина)
+    else if (parts.length === 1 && parts[0].length === 4 && !isNaN(Number(parts[0]))) {
+      return `${parts[0]}-01-01`; // Робимо 1 січня поточного року
+    }
+
     return undefined;
   }
 }

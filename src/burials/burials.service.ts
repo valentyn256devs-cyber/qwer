@@ -33,6 +33,7 @@ export class BurialsService {
     if (dto.photos && dto.photos.length > 0) {
       for (const fileData of dto.photos) {
         const parseFile = new this.back4app.parse.File(fileData.name, {base64: fileData.base64});
+        // const parseFile = new this.back4app.parse.File(fileData.name, {base64: fileData.base64});
         const savedFile = await parseFile.save();
         parseFiles.push(savedFile);
       }
@@ -59,12 +60,24 @@ export class BurialsService {
    * Отримання одного поховання за objectId
    */
   async findOne(id: string) {
-    const query = new this.back4app.parse.Query(this.className);
     try {
+      const query = new this.back4app.parse.Query(this.className);
       const result = await query.get(id);
       return this.mapFields(result);
     } catch {
       throw new NotFoundException(`Поховання з ID ${id} не знайдено`);
+    }
+  }
+
+  async findBurialById(id: string | undefined) {
+    try {
+      if (!id) {
+        return undefined;
+      }
+      return this.findOne(id);
+    } catch (error) {
+      console.log(error);
+      return undefined;
     }
   }
 

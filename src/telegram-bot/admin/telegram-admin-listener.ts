@@ -30,6 +30,9 @@ export class TelegramAdminListener {
     try {
       await this.ordersService.confirmAndNotify(orderId, clientId);
 
+      // Передаємо порожній inlineKeyboard, щоб кнопки миттєво зникли
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
+
       const message = ctx.callbackQuery.message;
       const text = `🟢 <b>Заявку №${orderId} ПІДТВЕРДЖЕНО</b>`;
 
@@ -37,7 +40,8 @@ export class TelegramAdminListener {
       if (message && 'photo' in message && message.photo) {
         await ctx.editMessageCaption(text, { parse_mode: 'HTML' });
       } else {
-        await ctx.editMessageText(text, { parse_mode: 'HTML' });
+        // await ctx.editMessageText(text, { parse_mode: 'HTML' });
+        await ctx.reply(text, { parse_mode: 'HTML' })
       }
     } catch (error) {
       console.error(error);
@@ -54,6 +58,9 @@ export class TelegramAdminListener {
     try {
       await this.ordersService.rejectAndNotify(orderId, clientId);
 
+      // Передаємо порожній inlineKeyboard, щоб кнопки миттєво зникли
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
+
       const message = ctx.callbackQuery.message;
       const text = `🔴 <b>Заявку №${orderId} ВІДХИЛЕНО</b>`;
 
@@ -61,7 +68,8 @@ export class TelegramAdminListener {
       if (message && 'photo' in message && message.photo) {
         await ctx.editMessageCaption(text, { parse_mode: 'HTML' });
       } else {
-        await ctx.editMessageText(text, { parse_mode: 'HTML' });
+        // await ctx.editMessageText(text, { parse_mode: 'HTML' });
+        await ctx.reply(text, { parse_mode: 'HTML' })
       }
     } catch (error) {
       console.error(error);

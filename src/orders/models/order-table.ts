@@ -15,5 +15,6 @@ export const OrderTable = {
     ReportPhotosBefore: 'reportPhotosBefore',
     ReportPhotosAfter: 'reportPhotosAfter',
     AdminComment: 'adminComment',
+    BurialId: 'burialId',
   },
 } as const;
