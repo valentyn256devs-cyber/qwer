@@ -2,7 +2,7 @@ import { Wizard, WizardStep, Ctx } from 'nestjs-telegraf';
 import { Markup } from 'telegraf';
 import { BurialsService } from '../../../burials/burials.service';
 import {type OrderWizardContext, OrderWizardSession} from "../interfaces/order-wizard-context.interface";
-import {OrderStepUa, Scene, Step} from "../../telegram-constants";
+import {mainMenuButtons, OrderStepUa, Scene, Step} from "../../telegram-constants";
 
 @Wizard(Scene.CREATE_BURIAL_WIZARD)
 export class CreateBurialScene {
@@ -32,7 +32,7 @@ export class CreateBurialScene {
       await ctx.reply(OrderStepUa.HintBurialLastName, { parse_mode: 'HTML' });
       ctx.wizard.next();
     } else {
-      await ctx.reply('Будь ласка, введіть текст.');
+      await ctx.reply(OrderStepUa.HintEnterText);
     }
   }
 
@@ -59,16 +59,6 @@ export class CreateBurialScene {
    */
   @WizardStep(4)
   async step4(@Ctx() ctx: OrderWizardContext) {
-    /*if (ctx.message && 'text' in ctx.message) {
-      if (!ctx.wizard.state.burialTemp) {
-        ctx.wizard.state.burialTemp = {};
-      }
-
-      ctx.wizard.state.burialTemp.burialName = ctx.message.text;
-      await ctx.reply(OrderStepUa.HintBurialFatherName, { parse_mode: 'HTML' });
-      ctx.wizard.next();
-    }*/
-
     if (ctx.message && 'text' in ctx.message) {
       if (!ctx.wizard.state.burialTemp) {
         ctx.wizard.state.burialTemp = {};
@@ -114,16 +104,18 @@ export class CreateBurialScene {
   @WizardStep(6)
   async step6(@Ctx() ctx: OrderWizardContext) {
     if (ctx.message && 'text' in ctx.message) {
+      if (!ctx.wizard.state.burialTemp) {
+        ctx.wizard.state.burialTemp = {};
+      }
+
       const text = ctx.message.text;
       if (text !== OrderStepUa.Skip) {
-        if (!ctx.wizard.state.burialTemp) {
-          ctx.wizard.state.burialTemp = {};
-        }
 
-        ctx.wizard.state.burialTemp.birthDate = this.parseDate(text);
+        ctx.wizard.state.burialTemp.birthDate = text; //this.parseDate(text);
       } else {
-        await ctx.reply(OrderStepUa.HintBurialDateMMYYYY, { parse_mode: 'HTML' });
-        return;
+        ctx.wizard.state.burialTemp.birthDate = ''; //this.parseDate(text);
+        // await ctx.reply(OrderStepUa.HintBurialDateMMYYYY, { parse_mode: 'HTML' });
+        // return;
       }
 
       await ctx.reply(
@@ -143,15 +135,16 @@ export class CreateBurialScene {
   @WizardStep(7)
   async step7(@Ctx() ctx: OrderWizardContext) {
     if (ctx.message && 'text' in ctx.message) {
+      if (!ctx.wizard.state.burialTemp) {
+        ctx.wizard.state.burialTemp = {};
+      }
       const text = ctx.message.text;
       if (text !== OrderStepUa.Skip) {
-        if (!ctx.wizard.state.burialTemp) {
-          ctx.wizard.state.burialTemp = {};
-        }
-        ctx.wizard.state.burialTemp.deathDate = this.parseDate(text);
+        ctx.wizard.state.burialTemp.deathDate = text; //this.parseDate(text);
       } else {
-        await ctx.reply(OrderStepUa.HintBurialDateMMYYYY, { parse_mode: 'HTML' });
-        return;
+        ctx.wizard.state.burialTemp.deathDate = ''; //this.parseDate(text);
+        // await ctx.reply(OrderStepUa.HintBurialDateMMYYYY, { parse_mode: 'HTML' });
+        // return;
       }
 
       await ctx.reply(OrderStepUa.SaveBurial, {
@@ -210,13 +203,14 @@ export class CreateBurialScene {
         await ctx.scene.enter(Scene.CREATE_ORDER_WIZARD);
       } catch (error) {
         console.error(error);
-        await ctx.reply('Сталася помилка при збереженні поховання. Спробуйте заново.');
+        await ctx.reply(OrderStepUa.ErrorSaveOrder);
+        await ctx.reply(OrderStepUa.ReturnToMainMenu, { reply_markup: mainMenuButtons });
         return ctx.scene.leave();
       }
     }
   }
 
-  private parseDate(dateStr: string): string | undefined {
+  /*private parseDate(dateStr: string): string | undefined {
     const parts = dateStr.split('.');
 
     // Варіант А: Прийшло лише ММ.РРРР або ДД.РРРР (2 частини, наприклад "06.2026")
@@ -243,5 +237,5 @@ export class CreateBurialScene {
     }
 
     return undefined;
-  }
+  }*/
 }

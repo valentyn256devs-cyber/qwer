@@ -69,7 +69,7 @@ export class TelegramClientListener {
       let responseText = OrderStepUa.ServicesCatalog;
       responseText += OrderStepUa.GenerateOrder;
 
-      const inlineButtons = services.map((s, index) => {
+      /*const inlineButtons = services.map((s, index) => {
         // Формат: "1. Тест (200 грн)"
         const shortDesc = s.description ? s.description.replace(/<\/?[^>]+(>|$)/g, "") : 'Опис відсутній';
         const buttonText = `${index + 1}. ${s.name} (${s.price} грн) - ${shortDesc}`;
@@ -78,6 +78,20 @@ export class TelegramClientListener {
         const finalText = buttonText.length > 60 ? `${buttonText.substring(0, 57)}...` : buttonText;
         return [
           Markup.button.callback(finalText, `client_order_service_${s.id}`),
+        ];
+      });*/
+
+      // Формуємо масив рядків. Кожен рядок містить масив із 2 кнопок
+      const inlineButtons = services.map((s, index) => {
+        // Кнопка А: Назва + Ціна
+        const mainButtonText = `${index + 1}. ${s.name}`;
+        // const mainButtonText = `${index + 1}. ${s.name} (${s.price} грн)`;
+        // Обрізаємо заголовок, якщо він раптом задовгий для однієї з двох кнопок (до 40 символів)
+        const finalMainText = mainButtonText.length > 60 ? `${mainButtonText.substring(0, 57)}...` : mainButtonText;
+
+        return [
+          Markup.button.callback(finalMainText, `client_order_service_${s.id}`), // Твоя логіка замовлення
+          Markup.button.callback('ℹ️', `client_service_desc_${s.id}`),     // Нова кнопка опису
         ];
       });
 
@@ -213,6 +227,73 @@ export class TelegramClientListener {
     // Видаляємо інлайн-кнопки або старе повідомлення, щоб не засмічувати чат
     await ctx.deleteMessage().catch(() => null);
     await ctx.reply(OrderStepUa.ReturnToMainMenu, { reply_markup: mainMenuButtons });
+  }
+
+  @Action(/^client_service_desc_(.+)$/)
+  async onServiceDescription(@Ctx() ctx: Context & { match: RegExpExecArray }) {
+    const callbackQuery = ctx.callbackQuery;
+    if (!callbackQuery) return;
+
+    try {
+      const serviceId = ctx.match ? ctx.match[1] : null;
+
+      if (!serviceId) {
+        return await ctx.answerCbQuery(OrderStepUa.ErrorLoadDescription);
+      }
+
+      const service = await this.servicesService.findOne(serviceId).catch(() => null);
+
+      if (!service || !service.description) {
+        return await ctx.answerCbQuery(OrderStepUa.NotFoundDescription);
+      }
+
+      // Гасимо годинничок на кнопці
+      await ctx.answerCbQuery().catch(() => null);
+
+      // Очищаємо опис від брудних HTML-тегів, але залишаємо базові для гарного оформлення повідомлення
+      const cleanDesc = service.description.replace(/<\/?[^>]+(>|$)/g, "");
+
+      // Формуємо красивий детальний текст (тут ліміт до 4096 символів!)
+      const descriptionText =
+        `<b>🪦 Детальний опис послуги: ${service.name}</b>\n\n` +
+        `💰 <b>Вартість:</b> <code>${service.price} грн</code>\n\n` +
+        `📝 <b>Про послугу:</b>\n<i>${cleanDesc}</i>`;
+
+      // Редагуємо поточну картку, замінюючи її на текст опису та кнопку повернення
+      await ctx.editMessageText(descriptionText, {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              // Кнопка замовлення залишається, якщо юзер прочитав і захотів купити
+              Markup.button.callback(OrderStepUa.Order, `client_order_service_${service.id}`),
+              // Кнопка повернення назад, яка знову викличе твій метод findAll()
+              Markup.button.callback(OrderStepUa.BackToList, 'client_refresh_services_list')
+            ]
+          ]
+        }
+      });
+
+    } catch (error) {
+      console.error('Помилка при показі опису послуги:', error);
+      await ctx.answerCbQuery(OrderStepUa.ErrorTryLater).catch(() => null);
+    }
+  }
+
+  @Action('client_refresh_services_list')
+  async onRefreshServicesList(@Ctx() ctx: Context) {
+    try {
+      // 1. Гасимо годинничок Telegram на кнопці
+      await ctx.answerCbQuery().catch(() => null);
+      // 2. Видаляємо поточне повідомлення з детальним описом послуги
+      await ctx.deleteMessage().catch(() => null);
+
+      // 3. Перевикликаємо твій основний метод виведення каталогу послуг
+      // Бот знову завантажить сервіси з бази й виведе їх рівними картками
+      return await this.onServicesCommand(ctx);
+    } catch (error) {
+      console.error(OrderStepUa.ErrorReturnToServices, error);
+    }
   }
 
   /**

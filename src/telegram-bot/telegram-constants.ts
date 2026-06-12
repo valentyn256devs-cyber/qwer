@@ -30,6 +30,8 @@ export const OrderStepUa = {
   Approve: '✅ Підтвердити',
   Reject: '❌ Відхилити',
   ApproveAndCreate: '✅ Підтверджую і Створюю',
+  Order: '🛍 Замовити',
+  BackToList: '🔙 Назад до списку',
 
   HintSetOrientation: 'Будь ласка, введіть текст орієнтирів або натисніть кнопку "Пропустити".',
   SendMyPhone: '📱 Поділитися номером телефону',
@@ -59,8 +61,8 @@ export const OrderStepUa = {
   HintBurialLastName: '✍️ Крок 2.1. <b>Введіть Прізвище померлого:</b>',
   HintBurialName: '✍️ Крок 2.2. <b>Введіть Ім’я померлого:</b>',
   HintBurialFatherName: '✍️ Крок 2.3. <b>Введіть По батькові померлого:</b>',
-  HintBurialDateBirthday: '📅 Крок 2.4. <b>Введіть дату народження у форматі ДД.ММ.РРРР:</b>\n<i>(Або натисніть кнопку "Пропустити ➡️")</i>',
-  HintBurialDateDied: '📅 Крок 2.5. <b>Введіть дату смерті у форматі ДД.ММ.РРРР:</b>\n<i>(Або натисніть кнопку "Пропустити ➡️")</i>',
+  HintBurialDateBirthday: '📅 Крок 2.4. <b>Введіть дату народження померлого:</b>\n<i>(Або натисніть кнопку "Пропустити ➡️")</i>',
+  HintBurialDateDied: '📅 Крок 2.5. <b>Введіть дату смерті померлого:</b>\n<i>(Або натисніть кнопку "Пропустити ➡️")</i>',
   // HintBurialPlaceLocation: '🏛 <b>Вкажіть назву кладовища, сектор або населений пункт:</b>',
 
   HintBurialDateMMYYYY: '📅 <b>Введіть хоча б місяць та рік у форматі ММ.РРРР:</b>\n',
@@ -82,7 +84,13 @@ export const OrderStepUa = {
   SaveBurial: '⏳ Зберігаю дані про поховання у базі...',
 
   ReturnToMainMenu: 'Повертаємось до головного меню:',
+  HintEnterText: 'Будь ласка, введіть текст.',
+  NotFoundDescription: 'Опис для цієї послуги відсутній.',
+  ErrorLoadDescription: 'Не вдалося завантажити опис.',
+  ErrorTryLater: 'Сталася помилка. Спробуйте пізніше.',
+  ErrorReturnToServices: 'Помилка при поверненні до списку послуг:',
 
+  ErrorSaveOrder: 'Сталася помилка при збереженні поховання. Спробуйте заново.',
 } as const;
 
 export const BurialMenu = {

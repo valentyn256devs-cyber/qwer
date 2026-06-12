@@ -57,14 +57,14 @@ export class CreateOrderScene {
 
       // Створюємо інлайн-кнопки з послугами з бази Back4app
       const buttons = services.map((s, index) => {
-        // Формат: "1. Тест (200 грн)"
-        const shortDesc = s.description ? s.description.replace(/<\/?[^>]+(>|$)/g, "") : 'Опис відсутній';
-        const buttonText = `${index + 1}. ${s.name} (${s.price} грн) - ${shortDesc}`;
+        const mainButtonText = `${index + 1}. ${s.name}`;
+        // const mainButtonText = `${index + 1}. ${s.name} (${s.price} грн)`;
+        // Обрізаємо заголовок, якщо він раптом задовгий для однієї з двох кнопок (до 40 символів)
+        const finalMainText = mainButtonText.length > 60 ? `${mainButtonText.substring(0, 57)}...` : mainButtonText;
 
-        // Обрізаємо текст кнопки, якщо він перевищує 64 символи (ліміт Telegram для гарного відображення на мобільних)
-        const finalText = buttonText.length > 60 ? `${buttonText.substring(0, 57)}...` : buttonText;
         return [
-          Markup.button.callback(finalText, `service_${s.id}`),
+          Markup.button.callback(finalMainText, `service_${s.id}`), // Твоя логіка замовлення
+          Markup.button.callback('ℹ️', `client_service_desc_${s.id}`),     // Нова кнопка опису
         ];
       });
 
@@ -113,7 +113,61 @@ export class CreateOrderScene {
         // 🔥 ПЕРЕХІД: Одразу викликаємо інший візард
         await ctx.reply(OrderStepUa.FillCard );
         return ctx.scene.enter(Scene.CREATE_BURIAL_WIZARD);
-      } // press back to menu
+      }
+      // 🔥 СЦЕНАРІЙ 2: Користувач натиснув на кнопку "ℹ️ Опис"
+      else if (callbackData.startsWith('client_service_desc_')) {
+        // Тут префікс "client_service_desc_", тому ID послуги — це все, що після 3-го підкреслення
+        const serviceId = callbackData.replace('client_service_desc_', '');
+
+        try {
+          const service = await this.servicesService.findOne(serviceId);
+          if (service && service.description) {
+            await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+
+            const cleanDesc = service.description.replace(/<\/?[^>]+(>|$)/g, "");
+
+            const descriptionText =
+              `<b>🪦 Детальний опис послуги: ${service.name}</b>\n\n` +
+              `💰 <b>Вартість:</b> <code>${service.price} грн</code>\n\n` +
+              `📝 <b>Про послугу:</b>\n<i>${cleanDesc}</i>`;
+
+            // Замінюємо картку товару на повний опис послуги
+            await ctx.editMessageText(descriptionText, {
+              parse_mode: 'HTML',
+              reply_markup: {
+                inline_keyboard: [
+                  [
+                    Markup.button.callback('🛍 Замовити', `service_${service.id}`),
+                    Markup.button.callback('🔙 Назад до списку', 'client_refresh_services_list')
+                  ]
+                ]
+              }
+            });
+          } else {
+            await ctx.answerCbQuery(OrderStepUa.NotFoundDescription, { show_alert: true });
+          }
+
+        } catch (error) {
+          console.error(error);
+          await ctx.answerCbQuery(OrderStepUa.ErrorLoadDescription, { show_alert: true}).catch(() => null);
+        }
+
+        // ⚠️ ВАЖЛИВО: Робимо return і НЕ викликаємо жодних переходів.
+        // Користувач просто закриває модалку й залишається дивитися на список послуг.
+        return;
+      }
+      // 🔥 СЦЕНАРІЙ 3: Натиснуто «🔙 Назад до списку» всередині опису послуги
+      else if (callbackData === 'client_refresh_services_list') {
+        await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+
+        // Повністю видаляємо повідомлення з описом
+        await ctx.deleteMessage().catch(() => null);
+        // Повертаємо візард на нульовий (початковий) крок і викликаємо його для перегенерації карток
+        ctx.wizard.selectStep(0);
+        return this.stepStart(ctx);
+      }
+
+      // press back to menu
       else if (callbackData.startsWith('client_back_to_menu')) {
         const id = ctx.callbackQuery?.id ?? '-'
         await ctx.telegram.answerCbQuery(id);
