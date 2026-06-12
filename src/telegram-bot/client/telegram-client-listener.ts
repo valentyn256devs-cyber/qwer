@@ -178,15 +178,6 @@ export class TelegramClientListener {
           `📍 <b>Місто/Локація:</b> ${location}\n` +
           `💬 <b>Коментар:</b> ${comment}\n`;
 
-        /*const cardText =
-          `${invisibleSpacer}\n` +
-          `🪦 <b>${b.name}</b>\n` +
-          `📝 <b>Прізвище:</b> ${lastName}\n` +
-          `📝 <b>Ім'я:</b> ${name}\n` +
-          `📝 <b>По батькові:</b> ${father}\n` +
-          `📍 <b>Місто/Локація:</b> ${location}\n` +
-          `📝 <b>Коментар:</b> ${comment}\n`;*/
-
         await ctx.reply(cardText, {
           parse_mode: 'HTML',
           reply_markup: {

@@ -369,6 +369,8 @@ export class CreateBurialScene {
             burialLastName: temp.burialLastName,
             burialName: temp.burialName,
             burialFatherName: temp.burialFatherName,
+            birthDate: temp.birthDate,
+            deathDate: temp.deathDate,
           }
         }
 

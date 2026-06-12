@@ -515,17 +515,23 @@ export class CreateOrderScene {
       `👤 <b>Клієнт:</b> ${state.clientName ?? ''}\n` +
       `📱 <b>Телефон/Контакти:</b> ${state.clientPhone ?? ''}\n\n`;
 
-    await ctx.reply(summary, {
-      parse_mode: 'HTML',
-      reply_markup: Markup.inlineKeyboard([
-        [
-          Markup.button.callback(OrderStepUa.ApproveAndCreate, 'confirm_order_save'),
-        ],
-        [Markup.button.callback(OrderStepUa.Cancel, 'cancel_order_wizard')],
-      ]).reply_markup,
-    });
+    try {
+      await ctx.reply(summary, {
+        parse_mode: 'HTML',
+        reply_markup: Markup.inlineKeyboard([
+          [
+            Markup.button.callback(OrderStepUa.ApproveAndCreate, 'confirm_order_save'),
+          ],
+          [Markup.button.callback(OrderStepUa.Cancel, 'cancel_order_wizard')],
+        ]).reply_markup,
+      });
 
-    ctx.wizard.next();
+      ctx.wizard.next();
+    } catch (e) {
+      console.log(e);
+      await ctx.reply(OrderStepUa.ErrorPrepareOrder);
+      await showMainMenu(ctx);
+    }
   }
 
   /**
@@ -680,10 +686,5 @@ export class CreateOrderScene {
       console.error(OrderStepUa.ErrorSavedOrder, error);
     }
   }
-
-  /*private async showMainMenu(ctx: Context,) {
-    // 🔥 ГОЛОВНИЙ ФІКС 2: Повертаємо головне меню при скасуванні
-    await ctx.reply(OrderStepUa.MainMenu, {reply_markup: mainMenuButtons},);
-  }*/
 
 }

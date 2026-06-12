@@ -94,6 +94,7 @@ export const OrderStepUa = {
   ErrorReturnToServices: 'Помилка при поверненні до списку послуг:',
 
   ErrorSaveOrder: 'Сталася помилка при збереженні поховання. Спробуйте заново.',
+  ErrorPrepareOrder: 'Сталася помилка при формуванні заявки. Перевірте символи вводу або спробуйте пізніше',
 } as const;
 
 export const BurialMenu = {
