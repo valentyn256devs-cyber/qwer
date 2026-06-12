@@ -16,7 +16,7 @@ async function bootstrap() {
   initSwagger(app);
 
   const PORT = process.env.PORT ?? 3000;
-  await app.listen(PORT);
+  await app.listen(PORT, '0.0.0.0');
   console.log(`🚀 Сервер працює на: http://localhost:${PORT}`);
   console.log(
     `📑 Документація Swagger доступна на: http://localhost:${PORT}/api/docs`,

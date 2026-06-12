@@ -25,19 +25,22 @@ FROM node:22-alpine AS runner
 WORKDIR /usr/src/app
 
 # Переносимо змінні оточення за замовчуванням
-#NODE_ENV=production
+ENV NODE_ENV=production
+ENV PORT=8080
 
 # Копіюємо package.json та package-lock.json
 COPY package*.json ./
 
 # Встановлюємо ТІЛЬКИ production залежності (без typescript, ts-node тощо)
-RUN npm ci --only=production
+#RUN npm ci --only=production
+RUN npm ci --omit=dev
 
 # Копіюємо скомпіований код з першого етапу
 COPY --from=builder /usr/src/app/dist ./dist
 
 # Відкриваємо порт, на якому працює NestJS
-EXPOSE 3000
+#EXPOSE 3000
+EXPOSE 8080
 
 # Команда для запуску додатка
 CMD ["node", "dist/main.js"]
