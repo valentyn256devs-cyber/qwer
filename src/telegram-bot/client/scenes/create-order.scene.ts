@@ -3,7 +3,7 @@ import {Context, Markup, Telegraf} from 'telegraf';
 import {ServicesService} from '../../../services/services.service';
 import {OrdersService} from '../../../orders/orders.service';
 import {OrderForm, type OrderWizardContext} from '../interfaces/order-wizard-context.interface';
-import {BurialMenu, mainMenuButtons, OrderStepUa, Scene, Step, TelegramBot} from "../../telegram-constants";
+import {OrderStepUa, Scene, showMainMenu, Step, TelegramBot} from "../../telegram-constants";
 import {BurialsService} from "../../../burials/burials.service";
 
 @Wizard(Scene.CREATE_ORDER_WIZARD)
@@ -30,12 +30,23 @@ export class CreateOrderScene {
     if (ctx.session.pendingBurial) {
       ctx.session.orderForm.burialId = ctx.session.pendingBurial?.id;
       ctx.session.orderForm.burialDisplayName = ctx.session.pendingBurial?.displayName;
+      ctx.session.orderForm.burialLastName = ctx.session.pendingBurial?.burialLastName;
+      ctx.session.orderForm.burialName = ctx.session.pendingBurial?.burialName;
+      ctx.session.orderForm.burialFatherName = ctx.session.pendingBurial?.burialFatherName;
+      ctx.session.orderForm.burialBirthDate = ctx.session.pendingBurial?.birthDate;
+      ctx.session.orderForm.burialDeathDate = ctx.session.pendingBurial?.deathDate;
 
       delete ctx.session.pendingBurial;
 
-      ctx.wizard.selectStep(3);
+      ctx.wizard.selectStep(4);
       // 2. Викликаємо метод Кроку 2 напряму, щоб юзер не чекав наступного повідомлення
-      return this.stepChooseLocation(ctx);
+      return this.stepContacts(ctx);
+    }
+
+    // Якщо МІСЦЕ вже обрано (прийшли з картки місця або після створення), одразу шлемо каталог послуг
+    if (ctx.session.orderForm.burialId) {
+      ctx.wizard.selectStep(2); // Перестрибуємо крок вибору місця, йдемо до послуг
+      return this.stepShowServicesCatalog(ctx); // Метод, який рендерить картки послуг
     }
 
     // 🔥 ГОЛОВНА ПЕРЕВІРКА: Якщо прийшли з каталогу послуг (serviceId вже існує)
@@ -51,6 +62,7 @@ export class CreateOrderScene {
       const services = await this.servicesService.findAll();
       if (services.length === 0) {
         await ctx.reply(OrderStepUa.NoServices);
+        await showMainMenu(ctx);
         await ctx.scene.leave();
         return;
       }
@@ -82,11 +94,244 @@ export class CreateOrderScene {
     } catch (error) {
       console.log(error);
       await ctx.reply(OrderStepUa.ErrorLoadServices);
+      await showMainMenu(ctx);
       return ctx.scene.leave();
     }
   }
 
+  /**
+   * КРОК 2: Обробка вибору / створення місця пам'яті
+   */
   @WizardStep(2)
+  async stepHandleBurialSelection(@Ctx() ctx: OrderWizardContext) {
+    const callbackQuery = ctx.callbackQuery;
+    if (!callbackQuery || !('data' in callbackQuery)) return;
+
+    const callbackData = callbackQuery.data;
+
+    // Сценарій А: Реєстрація нового місця
+    if (callbackData === 'order_create_new_burial') {
+      await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+      await ctx.reply(OrderStepUa.FillCard);
+      ctx.wizard.selectStep(0); // Повертаємо покажчик на 0, щоб коли візард повернеться, він обробив pendingBurial
+      return ctx.scene.enter(Scene.CREATE_BURIAL_WIZARD);
+    }
+
+    // Сценарій Б: Показ списку існуючих місць
+    if (callbackData === 'order_choose_existing') {
+      await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+      await ctx.deleteMessage().catch(() => null);
+
+      const telegramId = ctx.from?.id.toString() ?? '';
+      const myBurials = await this.burialsService.findByTelegramId(telegramId);
+
+      const burialButtons = myBurials.map(b => [
+        Markup.button.callback(`🪦 ${b.name}`, `select_burial_for_order_${b.id}`)
+      ]);
+      burialButtons.push([Markup.button.callback('🔙 Назад', 'order_back_to_start')]);
+
+      await ctx.reply('👇 Оберіть об\'єкт зі списку:', {
+        reply_markup: {inline_keyboard: burialButtons}
+      });
+      return; // Залишаємось на Кроці 2, чекаємо вибору конкретного ID місця
+    }
+
+    if (!ctx.session.orderForm) {
+      ctx.session.orderForm = {};
+    }
+
+    // Сценарій В: Клік по конкретному об'єкту зі списку
+    if (callbackData.startsWith('select_burial_for_order_')) {
+      const burialId = callbackData.split('_')[4];
+      await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+      await ctx.deleteMessage().catch(() => null);
+
+      ctx.session.orderForm.burialId = burialId;
+      try {
+        const b = await this.burialsService.findBurialById(burialId);
+        ctx.session.orderForm.burialDisplayName = b?.name;
+      } catch (e) {
+        console.log(e)
+      }
+
+      ctx.wizard.next(); // Переходимо на Крок 3 (індекс 2)
+      return this.stepShowServicesCatalog(ctx);
+    } else // Повернення на початок вибору об'єкта ----------------------------------------------------
+    if (callbackData === 'order_back_to_start') {
+      await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+      await ctx.deleteMessage().catch(() => null);
+      ctx.wizard.selectStep(0);
+      return this.stepStart(ctx);
+    } // Кнопка скасування (назад до головного меню) --------------------------------------------------
+    if (callbackData === 'client_back_to_menu') {
+      await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+      await ctx.deleteMessage().catch(() => null);
+      await showMainMenu(ctx);
+      return ctx.scene.leave();
+    } else // користувач обрав послугу --------------------------------------------------------------
+    if (callbackData.startsWith('service_')) {
+      ctx.wizard.selectStep(11);
+      return this.stepAddBurial(ctx);
+    }
+  }
+
+  /**
+   * КРОК 3 (Допоміжний метод): Генерація та надсилання карток послуг
+   */
+  async stepShowServicesCatalog(@Ctx() ctx: OrderWizardContext) {
+    const loadingMsg = await ctx.reply(OrderStepUa.LoadingServices).catch(() => null);
+    const chatId = ctx.chat?.id ?? '';
+    if (!ctx.session.orderForm) {
+      ctx.session.orderForm = {};
+    }
+
+    try {
+      const services = await this.servicesService.findAll();
+
+      if (services.length === 0) {
+        if (loadingMsg) await ctx.telegram.deleteMessage(chatId, loadingMsg.message_id).catch(() => null);
+        await ctx.reply(OrderStepUa.NoServices);
+        await showMainMenu(ctx);
+        return ctx.scene.leave();
+      }
+
+      if (loadingMsg) await ctx.telegram.deleteMessage(chatId, loadingMsg.message_id).catch(() => null);
+
+      await ctx.reply(`📚 <b>${OrderStepUa.ServicesCatalog}</b>\nОберіть потрібну послугу для об'єкта <b>${ctx.session.orderForm.burialDisplayName}</b>:`, {
+        parse_mode: 'HTML',
+      });
+
+      // Рендеримо окремі картки
+      for (const [index, s] of services.entries()) {
+        const shortDesc = s.description ? s.description.replace(/<\/?[^>]+(>|$)/g, "") : 'Опис відсутній';
+        const invisibleSpacer = '<code>👉' + '‌️‌️' + ' '.repeat(26) + '</code>';
+
+        const cardMessageText =
+          `<b>🪦 Послуга №${index + 1}: ${s.name}</b>\n` +
+          `💰 <b>Вартість:</b> <code>${s.price} грн</code>\n` +
+          `📝 <b>Коротко:</b> <i>${shortDesc.substring(0, 100)}${shortDesc.length > 100 ? '...' : ''}</i>\n` +
+          `${invisibleSpacer}`;
+
+        await ctx.reply(cardMessageText, {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                Markup.button.callback('🛍 Замовити', `service_${s.id}`),
+                Markup.button.callback('ℹ️ Детальніше', `client_service_desc_${s.id}`),
+              ]
+            ]
+          }
+        });
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+
+      // Нижня кнопка скасування замовлення
+      await ctx.reply('⬇️ Або ви можете скасувати оформлення:', {
+        reply_markup: {
+          inline_keyboard: [[Markup.button.callback(OrderStepUa.GoBack, 'client_back_to_menu')]]
+        }
+      });
+
+    } catch (error) {
+      console.error(error);
+      await ctx.reply(OrderStepUa.ErrorLoadServices);
+      await showMainMenu(ctx);
+      return ctx.scene.leave();
+    }
+  }
+
+  /**
+   * КРОК 3 (Слухач): Обробка вибору послуг, описів та навігації всередині каталогу
+   */
+  @WizardStep(3)
+  async stepHandleServiceSelection(@Ctx() ctx: OrderWizardContext) {
+    const callbackQuery = ctx.callbackQuery;
+    if (!callbackQuery || !('data' in callbackQuery)) return;
+
+    if (!ctx.session.orderForm) {
+      ctx.session.orderForm = {};
+    }
+
+    const callbackData = callbackQuery.data;
+
+    // Сценарій 1: Юзер обрав послугу
+    if (callbackData.startsWith('service_')) {
+      const serviceId = callbackData.split('_')[1];
+
+      try {
+        const service = await this.servicesService.findOne(serviceId);
+        ctx.session.orderForm.serviceId = serviceId;
+        ctx.session.orderForm.serviceName = service.name;
+        ctx.session.orderForm.price = service.price;
+      } catch (e) {
+        ctx.session.orderForm.serviceId = serviceId;
+        ctx.session.orderForm.serviceName = OrderStepUa.Service;
+      }
+
+      await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+
+      // 🔥 ПЕРЕХІД ДАЛІ: Послугу й місце обрано, переходимо до наступних кроків форми (наприклад, дата, коментар, фото об'єкта)
+      await ctx.reply(`✅ Ви обрали: <b>${ctx.session.orderForm.serviceName}</b>. Переходимо до наступного кроку...`, {parse_mode: 'HTML'});
+      ctx.wizard.selectStep(4);
+      return this.stepContacts(ctx);
+    }
+
+    // Сценарій 2: Клік по кнопці "ℹ️ Детальніше" (Розгортання на повний екран)
+    if (callbackData.startsWith('client_service_desc_')) {
+      const id = callbackData.replace('client_service_desc_', '');
+
+      try {
+        const service = await this.servicesService.findOne(id);
+        if (service && service.description) {
+          await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+
+          const cleanDesc = service.description.replace(/<\/?[^>]+(>|$)/g, "");
+          const descriptionText =
+            `<b>🪦 Детальний опис послуги: ${service.name}</b>\n\n` +
+            `💰 <b>Вартість:</b> <code>${service.price} грн</code>\n\n` +
+            `📝 <b>Про послугу:</b>\n<i>${cleanDesc}</i>`;
+
+          await ctx.editMessageText(descriptionText, {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  Markup.button.callback('🛍 Замовити', `service_${service.id}`),
+                  Markup.button.callback('🔙 Назад до списку', 'client_refresh_services_list')
+                ]
+              ]
+            }
+          });
+        } else {
+          await ctx.answerCbQuery(OrderStepUa.NotFoundDescription, {show_alert: true});
+        }
+      } catch (error) {
+        console.error(error);
+        await ctx.answerCbQuery(OrderStepUa.ErrorLoadDescription, {show_alert: true}).catch(() => null);
+      }
+      return; // Залишаємось на Кроці 3
+    }
+
+    // Сценарій 3: Клік по кнопці «🔙 Назад до списку» всередині опису
+    if (callbackData === 'client_refresh_services_list') {
+      await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+      await ctx.deleteMessage().catch(() => null);
+
+      // Просто перерендерюємо каталог на цьому ж кроці
+      return this.stepShowServicesCatalog(ctx);
+    }
+
+    // Скасування та вихід в меню
+    if (callbackData === 'client_back_to_menu') {
+      await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+      await ctx.deleteMessage().catch(() => null);
+      await showMainMenu(ctx);
+      return ctx.scene.leave();
+    }
+  }
+
+  @WizardStep(4)
   async stepAddBurial(@Ctx() ctx: OrderWizardContext) {
     const callbackQuery = ctx.callbackQuery;
     if (callbackQuery && 'data' in callbackQuery) {
@@ -111,7 +356,7 @@ export class CreateOrderScene {
         await ctx.telegram.answerCbQuery(callbackQuery.id);
 
         // 🔥 ПЕРЕХІД: Одразу викликаємо інший візард
-        await ctx.reply(OrderStepUa.FillCard );
+        await ctx.reply(OrderStepUa.FillCard);
         return ctx.scene.enter(Scene.CREATE_BURIAL_WIZARD);
       }
       // 🔥 СЦЕНАРІЙ 2: Користувач натиснув на кнопку "ℹ️ Опис"
@@ -144,12 +389,12 @@ export class CreateOrderScene {
               }
             });
           } else {
-            await ctx.answerCbQuery(OrderStepUa.NotFoundDescription, { show_alert: true });
+            await ctx.answerCbQuery(OrderStepUa.NotFoundDescription, {show_alert: true});
           }
 
         } catch (error) {
           console.error(error);
-          await ctx.answerCbQuery(OrderStepUa.ErrorLoadDescription, { show_alert: true}).catch(() => null);
+          await ctx.answerCbQuery(OrderStepUa.ErrorLoadDescription, {show_alert: true}).catch(() => null);
         }
 
         // ⚠️ ВАЖЛИВО: Робимо return і НЕ викликаємо жодних переходів.
@@ -173,7 +418,7 @@ export class CreateOrderScene {
         await ctx.telegram.answerCbQuery(id);
         // Видаляємо інлайн-кнопки або старе повідомлення, щоб не засмічувати чат
         await ctx.deleteMessage().catch(() => null);
-        await this.showMainMenu(ctx);
+        await showMainMenu(ctx);
         return ctx.scene.leave();
       }
     }
@@ -185,185 +430,9 @@ export class CreateOrderScene {
   }
 
   /**
-   * КРОК 2: Обробка вибору послуги та вибір варіанту локації
-   */
-  @WizardStep(3)
-  async stepChooseLocation(@Ctx() ctx: OrderWizardContext) {
-    if (!ctx.session.orderForm) {
-      ctx.session.orderForm = {};
-    }
-
-    // Якщо користувач щойно прийшов зі створення послуги через callback
-    const callbackQuery = ctx.callbackQuery;
-    if (callbackQuery && 'data' in callbackQuery) {
-      await ctx.telegram.answerCbQuery(callbackQuery.id);
-    }
-
-    // 3. Якщо користувач чомусь не обрав послугу, а просто надіслав текст
-    if (!ctx.session.orderForm?.serviceId) {
-      await ctx.reply(OrderStepUa.ChooseService);
-      return; // Залишаємо користувача на цьому ж кроці
-    }
-
-    // 4. Виводимо клавіатуру вибору локації за ТЗ
-    await ctx.reply(Step.Step3, {
-      parse_mode: 'HTML',
-      reply_markup: Markup.keyboard([
-        [BurialMenu.Geo, BurialMenu.GoogleMap],
-        [BurialMenu.Text, BurialMenu.City],
-      ])
-        .oneTime()
-        .resize().reply_markup,
-    });
-
-    // Переходимо до наступного кроку візарда
-    // ctx.wizard.next();
-    ctx.wizard.selectStep(3);
-  }
-
-  /**
-   * КРОК 3: Очікування вибору варіанту і підказка як ввести дані
-   */
-  @WizardStep(4)
-  async stepGeoLocation(@Ctx() ctx: OrderWizardContext) {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore
-    const text = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-
-    // Якщо користувач прислав не текст, або текст не з кнопок меню
-    const validButtons : string[] = [
-      BurialMenu.Geo, BurialMenu.GoogleMap,
-      BurialMenu.Text, BurialMenu.City
-    ];
-
-    if (!text || !validButtons.includes(text)) {
-      await ctx.reply(OrderStepUa.ChooseMenu );
-      return; // 🛑 ЗУПИНЯЄМО ФЛОУ. Користувач залишається на цьому кроці, поки не натисне кнопку.
-    }
-
-    if (!ctx.session.orderForm) {
-      ctx.session.orderForm = {};
-    }
-
-    if (text === BurialMenu.Geo) {
-      ctx.session.orderForm.locationType = 'coordinates';
-      await ctx.reply(
-        OrderStepUa.SendYourLocation,
-        Markup.keyboard([
-          [Markup.button.locationRequest(OrderStepUa.SendMyLocation)],
-        ]).resize(),
-      );
-    } else if (text === BurialMenu.GoogleMap) {
-      ctx.session.orderForm.locationType = 'google_maps';
-      await ctx.reply(
-        OrderStepUa.HintGoogleMap,
-        { parse_mode: 'HTML', reply_markup: Markup.removeKeyboard().reply_markup }
-      );
-    } else {
-      ctx.session.orderForm.locationType = 'address_text';
-      await ctx.reply(
-        OrderStepUa.HintFullLocation,
-        { parse_mode: 'HTML', reply_markup: Markup.removeKeyboard().reply_markup }
-      );
-    }
-    ctx.wizard.next();
-  }
-
-  /**
-   * КРОК 4: Запис локації та перехід до Опису завдання / Коментаря
-   */
-  @WizardStep(5)
-  async stepCoordinates(@Ctx() ctx: OrderWizardContext) {
-    const msg = ctx.message;
-
-    if (!ctx.session.orderForm) {
-      ctx.session.orderForm = {};
-    }
-
-    // 1. Перевіряємо, чи взагалі існує об'єкт повідомлення
-    if (!msg) {
-      await ctx.reply(OrderStepUa.SendCorrectLocation);
-      return; // Залишаємо користувача на цьому ж кроці
-    }
-
-    // 2. Безпечно перевіряємо наявність геолокації (Варіант 2 з ТЗ)
-    if (ctx.session.orderForm.locationType === 'coordinates' && 'location' in msg) {
-      ctx.session.orderForm.locationData = `${msg.location.latitude},${msg.location.longitude}`;
-    }
-    // 3. Безпечно перевіряємо наявність тексту (Варіанти 1, 3, 4 з ТЗ)
-    else if ('text' in msg && msg.text) {
-      ctx.session.orderForm.locationData = msg.text;
-    } else { // 4. Якщо прийшов не той тип даних (наприклад, користувач замість локації скинув стікер)
-      await ctx.reply(OrderStepUa.IncorrectLocationFormat);
-      return;
-    }
-
-    //
-    await ctx.reply(
-      OrderStepUa.HintDescriptionBurialPlace,
-      {
-        parse_mode: 'HTML',
-        reply_markup: Markup.inlineKeyboard([
-          [Markup.button.callback(OrderStepUa.Skip, 'skip_burial_description')],
-        ]).reply_markup,
-      }
-    );
-
-    ctx.wizard.next();
-  }
-
-  /**
-   * Додаткові візуальні орієнтири
-   * Цей крок є необов'язковим, його можна пропустити.
-   */
-  @WizardStep(6)
-  async stepBurialDescription(@Ctx() ctx: OrderWizardContext) {
-    // 1. Обробка першого входу на цей крок
-    if (!ctx.session.orderForm) {
-      ctx.session.orderForm = {};
-    }
-
-    // Перевіряємо, чи ми щойно зайшли сюди з попереднього кроку (коли користувач ввів локацію)
-    // Якщо в повідомленні лежать дані локації або текст кнопки вибору, ми показуємо інструкцію для орієнтирів
-    const msg = ctx.message;
-
-    // 2. ОБРОБКА РЕЗУЛЬТАТУ (Коли користувач уже щось надіслав або натиснув кнопку)
-
-    // Сценарій А: Користувач натиснув інлайн-кнопку "Пропустити"
-    if (ctx.has('callback_query') &&
-      'data' in ctx.callbackQuery &&
-      ctx.callbackQuery.data === 'skip_burial_description')
-    {
-      await ctx.telegram.answerCbQuery(ctx.callbackQuery.id);
-      ctx.session.orderForm.cemeteryDetails = OrderStepUa.NoSet;
-    }
-    // Сценарій Б: Користувач ввів орієнтири текстом
-    else if (msg && 'text' in msg && msg.text) {
-      ctx.session.orderForm.cemeteryDetails = msg.text;
-    }
-    // Сценарій В: Прийшов некоректний тип даних (наприклад, стікер)
-    else {
-      await ctx.reply(OrderStepUa.HintSetOrientation);
-      return; // залишаємо юзера на цьому кроці
-    }
-
-    // Рухаємось далі до опису завдання (коментаря)
-    await ctx.reply(
-      Step.Step4,
-      {
-        parse_mode: 'HTML',
-        reply_markup: Markup.keyboard([[OrderStepUa.Skip]]).resize().oneTime().reply_markup,
-      },
-    );
-
-    // Переводимо курсор на Крок 7 (метод stepContacts)
-    ctx.wizard.next();
-  }
-
-  /**
    * Контактні дані (Ім'я, телефон)
    */
-  @WizardStep(7)
+  @WizardStep(5)
   async stepContacts(@Ctx() ctx: OrderWizardContext) {
     if (!ctx.session.orderForm) {
       ctx.session.orderForm = {};
@@ -391,7 +460,7 @@ export class CreateOrderScene {
   /**
    * КРОК 6: Підтвердження заявки
    */
-  @WizardStep(8)
+  @WizardStep(6)
   async stepPhone(@Ctx() ctx: OrderWizardContext) {
     const msg = ctx.message;
 
@@ -422,18 +491,29 @@ export class CreateOrderScene {
     await ctx.reply('⏳ Формую резюме заявки...', Markup.removeKeyboard()).catch(() => null);
 
     const state = ctx.session.orderForm;
+    const lastName = state.burialLastName?.trim() ? state.burialLastName : 'Не вказано';
+    const name = state.burialName?.trim() ? state.burialName : 'Не вказано';
+    const father = state.burialFatherName?.trim() ? state.burialFatherName : 'Не вказано';
+
+    // Перевіряємо та форматуємо значення дат (якщо приходить пустий рядок)
+    const birth = state.burialBirthDate?.trim() ? state.burialBirthDate : 'Не вказано';
+    const death = state.burialDeathDate?.trim() ? state.burialDeathDate : 'Не вказано';
 
     // Виводимо резюме замовлення перед фінальним збереженням за ТЗ
     const summary =
       `📝 <b>ПЕРЕВІРКА ЗАЯВКИ</b>\n\n` +
       `📦 <b>Назва:</b> ${state.burialDisplayName ?? ''}\n` +
       `📦 <b>Послуга:</b> ${state.serviceName ?? ''}\n` +
-      // `📍 <b>Тип локації:</b> ${state.locationType ?? ''}\n` +
+      `👤 <b>Прізвище:</b> ${lastName}\n` +
+      `👤 <b>Ім'я:</b> ${name}\n` +
+      `👤 <b>По батькові:</b> ${father}\n` +
+      `📅 <b>Дата народження:</b> ${birth}\n` +
+      `🕯 <b>Дата смерті:</b> ${death}\n` +
       `📍 <b>Дані місця:</b> ${state.locationData ?? ''}\n` +
+      `💬 <b>Орієнтир:</b> ${state.cemeteryDetails ?? 'Немає'}\n` +
       `💬 <b>Коментар:</b> ${state.customComment ?? 'Немає'}\n` +
       `👤 <b>Клієнт:</b> ${state.clientName ?? ''}\n` +
-      `📱 <b>Телефон/Контакти:</b> ${state.clientPhone ?? ''}\n\n` +
-      `Все правильно?`;
+      `📱 <b>Телефон/Контакти:</b> ${state.clientPhone ?? ''}\n\n`;
 
     await ctx.reply(summary, {
       parse_mode: 'HTML',
@@ -451,7 +531,7 @@ export class CreateOrderScene {
   /**
    * ФІНАЛ: Збереження в Back4app
    */
-  @WizardStep(9)
+  @WizardStep(7)
   async stepSaveOrder(@Ctx() ctx: OrderWizardContext) {
     // 1. Використовуємо Type Guard, щоб TypeScript знав, що це клік по інлайн-кнопці
     if (ctx.has('callback_query') && 'data' in ctx.callbackQuery) {
@@ -462,7 +542,7 @@ export class CreateOrderScene {
 
       if (callbackData === 'confirm_order_save') {
         // Передаємо порожній inlineKeyboard, щоб кнопки миттєво зникли
-        await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
+        await ctx.editMessageReplyMarkup({inline_keyboard: []}).catch(() => null);
 
         await ctx.reply(OrderStepUa.SavingOrder);
 
@@ -503,7 +583,7 @@ export class CreateOrderScene {
         }
       } else {
         // Передаємо порожній inlineKeyboard, щоб кнопки миттєво зникли
-        await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
+        await ctx.editMessageReplyMarkup({inline_keyboard: []}).catch(() => null);
         await ctx.reply(OrderStepUa.OrderCanceled, Markup.removeKeyboard(),);
       }
     } else {
@@ -512,7 +592,7 @@ export class CreateOrderScene {
       return;
     }
 
-    await this.showMainMenu(ctx);
+    await showMainMenu(ctx);
     return ctx.scene.leave();
   }
 
@@ -521,11 +601,11 @@ export class CreateOrderScene {
     const burialData = await this.burialsService.findBurialById(state.burialId);
 
     // Форматер для відображення дат анкети
-    const dateFormatter = new Intl.DateTimeFormat('uk-UA', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
+    // const dateFormatter = new Intl.DateTimeFormat('uk-UA', {
+    //   day: '2-digit',
+    //   month: '2-digit',
+    //   year: 'numeric',
+    // });
 
     // 2. Формуємо базове резюме замовлення
     let adminSummary = `🔔 <b>НОВА ЗАЯВКА №${orderId}</b>\n\n`;
@@ -543,8 +623,10 @@ export class CreateOrderScene {
       const bLastName = burialData.burialLastName ?? '—';
       const bFatherName = burialData.burialFatherName ?? '—';
 
-      const birthStr = burialData.birthDate ? dateFormatter.format(new Date(burialData.birthDate)) : 'Невідомо';
-      const deathStr = burialData.deathDate ? dateFormatter.format(new Date(burialData.deathDate)) : 'Невідомо';
+      // const birthStr = burialData.birthDate ? dateFormatter.format(new Date(burialData.birthDate)) : 'Невідомо';
+      // const deathStr = burialData.deathDate ? dateFormatter.format(new Date(burialData.deathDate)) : 'Невідомо';
+      const birthStr = burialData.birthDate ?? 'Невідомо';
+      const deathStr = burialData.deathDate ?? 'Невідомо';
 
       adminSummary += `🪦 <b>ДАНІ МІСЦЯ ПАМ'ЯТІ:</b>\n`;
       adminSummary += `👤 <b>Покійний:</b> ${bLastName} ${bName} ${bFatherName}\n`;
@@ -599,9 +681,9 @@ export class CreateOrderScene {
     }
   }
 
-  private async showMainMenu(ctx: Context, ) {
+  /*private async showMainMenu(ctx: Context,) {
     // 🔥 ГОЛОВНИЙ ФІКС 2: Повертаємо головне меню при скасуванні
-    await ctx.reply(OrderStepUa.MainMenu, { reply_markup: mainMenuButtons },);
-  }
+    await ctx.reply(OrderStepUa.MainMenu, {reply_markup: mainMenuButtons},);
+  }*/
 
 }

@@ -1,9 +1,9 @@
 import {Action, Command, Ctx, Hears, On, Start, Update} from 'nestjs-telegraf';
-import { OrdersService } from '../../orders/orders.service';
-import { ServicesService } from '../../services/services.service';
+import {OrdersService} from '../../orders/orders.service';
+import {ServicesService} from '../../services/services.service';
 import {Context, Markup} from 'telegraf';
-import { type OrderWizardContext } from './interfaces/order-wizard-context.interface';
-import {MainMenu, mainMenuButtons, OrderStepUa, Scene} from "../telegram-constants";
+import {type OrderWizardContext} from './interfaces/order-wizard-context.interface';
+import {MainMenu, mainMenuButtons, OrderStepUa, Scene, showMainMenu} from "../telegram-constants";
 import {BurialsService} from "../../burials/burials.service";
 
 @Update()
@@ -12,7 +12,8 @@ export class TelegramClientListener {
     private readonly ordersService: OrdersService,
     private readonly servicesService: ServicesService,
     private readonly burialsService: BurialsService,
-  ) {}
+  ) {
+  }
 
   /**
    * 1. Обробка команди /start (Головне меню клієнта за ТЗ)
@@ -20,15 +21,9 @@ export class TelegramClientListener {
   @Start()
   async onStart(@Ctx() ctx: Context) {
     // Головне меню
-    const mainMenu = Markup.keyboard([
-      [MainMenu.Services],
-      [MainMenu.CreateOrder],
-      [MainMenu.MyOrders, MainMenu.Help],
-    ]).resize();
-
     await ctx.reply(
       OrderStepUa.Welcome,
-      { parse_mode: 'HTML', reply_markup: mainMenu.reply_markup },
+      {parse_mode: 'HTML', reply_markup: mainMenuButtons},
     );
   }
 
@@ -115,6 +110,116 @@ export class TelegramClientListener {
   }
 
   /**
+   * Перегляд усіх місць пам'яті (поховань), створених користувачем за Telegram ID
+   */
+  @Hears(MainMenu.MyBurialsMemorials)
+  @Command('my_memorials')
+  async onMyMemorials(@Ctx() ctx: Context) {
+    const telegramId = ctx.from?.id.toString();
+    if (!telegramId) return;
+
+    const loadingMsg = await ctx.reply(
+      '⏳ Завантаження...',
+      Markup.removeKeyboard()).catch(() => null
+    );
+    const chatId = ctx.chat?.id ?? '';
+
+    try {
+      const burials = await this.burialsService.findByTelegramId(telegramId);
+      if (loadingMsg) await ctx.telegram.deleteMessage(chatId, loadingMsg.message_id).catch(() => null);
+      await ctx.reply(`🗂 <b>Ваші зареєстровані місця пам'яті:</b>`, {parse_mode: 'HTML'});
+
+      if (burials.length === 0) {
+        // Якщо місць немає, пропонуємо створити перше
+        await ctx.reply('У вас ще немає доданих місць пам\'яті.', {
+          reply_markup: {
+            inline_keyboard: [
+              [Markup.button.callback('➕ Додати нове місце', 'client_memorial_add')],
+              [Markup.button.callback(OrderStepUa.GoBack, 'client_back_to_menu')]
+            ]
+          }
+        });
+        return;
+      }
+
+      // Виводимо кожне місце окремою карткою (аналогічно до каталогу послуг)
+      for (const b of burials) {
+        const invisibleSpacer = '<code>👉 Поховання: ' + '━'.repeat(24) + '</code>';
+
+        // 1. Красиво збираємо ПІБ, відсікаючи null значення
+        // const fioParts = [b.burialLastName, b.burialName, b.burialFatherName].filter(Boolean);
+        // const fullName = fioParts.length > 0 ? fioParts.join(' ') : 'Не вказано';
+
+        const lastName = b.burialLastName?.trim() ? b.burialLastName : 'Не вказано';
+        const name = b.burialName?.trim() ? b.burialName : 'Не вказано';
+        const father = b.burialFatherName?.trim() ? b.burialFatherName : 'Не вказано';
+
+        // Перевіряємо та форматуємо значення дат (якщо приходить пустий рядок)
+        const birth = b.birthDate?.trim() ? b.birthDate : 'Не вказано';
+        const death = b.deathDate?.trim() ? b.deathDate : 'Не вказано';
+        // Визначаємо локацію: пріоритет на coordinates, потім cemetery
+        let location = 'Не вказано';
+        if (b.coordinates) {
+          location = `\n📍 Координати: <code>${b.coordinates}</code>`;
+        } else if (b.cemetery) {
+          location = b.cemetery;
+        }
+
+        const comment = b.notes?.trim() ? b.notes : '---';
+
+        const cardText =
+          `${invisibleSpacer}\n` +
+          `🪦 <b>${b.name}</b>\n` +
+          `👤 <b>Прізвище:</b> ${lastName}\n` +
+          `👤 <b>Ім'я:</b> ${name}\n` +
+          `👤 <b>По батькові:</b> ${father}\n` +
+          `📅 <b>Дата народження:</b> ${birth}\n` +
+          `🕯 <b>Дата смерті:</b> ${death}\n` +
+          `📍 <b>Місто/Локація:</b> ${location}\n` +
+          `💬 <b>Коментар:</b> ${comment}\n`;
+
+        /*const cardText =
+          `${invisibleSpacer}\n` +
+          `🪦 <b>${b.name}</b>\n` +
+          `📝 <b>Прізвище:</b> ${lastName}\n` +
+          `📝 <b>Ім'я:</b> ${name}\n` +
+          `📝 <b>По батькові:</b> ${father}\n` +
+          `📍 <b>Місто/Локація:</b> ${location}\n` +
+          `📝 <b>Коментар:</b> ${comment}\n`;*/
+
+        await ctx.reply(cardText, {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                Markup.button.callback('🛍 Замовити послугу', `memorial_order_service_${b.id}`),
+                Markup.button.callback('✏️ Редагувати', `memorial_edit_${b.id}`)
+              ]
+            ]
+          }
+        });
+        await new Promise((resolve) => setTimeout(resolve, 150));
+      }
+
+      // Нижня панель навігації та додавання
+      await ctx.reply('⬇️ Керування списком:', {
+        reply_markup: {
+          inline_keyboard: [
+            [Markup.button.callback('➕ Додати нове місце пам\'яті', 'client_memorial_add')],
+            [Markup.button.callback(OrderStepUa.GoBack, 'client_back_to_menu')]
+          ]
+        }
+      });
+
+    } catch (error) {
+      console.error(error);
+      if (loadingMsg) await ctx.telegram.deleteMessage(chatId, loadingMsg.message_id).catch(() => null);
+      await ctx.reply('❌ Помилка завантаження місць пам\'яті.');
+      await showMainMenu(ctx);
+    }
+  }
+
+  /**
    * 3. Перегляд статусів своїх замовлень за Telegram ID
    * Слухаємо кнопку ТЗ "Мої замовлення"
    */
@@ -181,7 +286,7 @@ export class TelegramClientListener {
   @Hears(MainMenu.Help)
   @Command('help')
   async onHelp(@Ctx() ctx: Context) {
-    await ctx.reply(OrderStepUa.HintAdminFeedbackHelp, { parse_mode: 'HTML' });
+    await ctx.reply(OrderStepUa.HintAdminFeedbackHelp, {parse_mode: 'HTML'});
   }
 
   /**
@@ -226,7 +331,7 @@ export class TelegramClientListener {
 
     // Видаляємо інлайн-кнопки або старе повідомлення, щоб не засмічувати чат
     await ctx.deleteMessage().catch(() => null);
-    await ctx.reply(OrderStepUa.ReturnToMainMenu, { reply_markup: mainMenuButtons });
+    await ctx.reply(OrderStepUa.ReturnToMainMenu, {reply_markup: mainMenuButtons});
   }
 
   @Action(/^client_service_desc_(.+)$/)
@@ -297,6 +402,75 @@ export class TelegramClientListener {
   }
 
   /**
+   * Екшен 1: Швидке замовлення послуги прямо з картки конкретного місця
+   */
+  @Action(/^memorial_order_service_(.+)$/)
+  async onMemorialOrderService(@Ctx() ctx: OrderWizardContext) {
+    await ctx.telegram.answerCbQuery(ctx.callbackQuery?.id ?? '').catch(() => null);
+    // @ts-ignore
+    const burialId = ctx.match[1];
+
+    ctx.session.orderForm = {
+      burialId: burialId
+    };
+
+    try {
+      const burial = await this.burialsService.findBurialById(burialId);
+      ctx.session.orderForm.burialDisplayName = burial?.name;
+      ctx.session.orderForm.burialLastName = burial?.burialLastName ?? undefined;
+      ctx.session.orderForm.burialName = burial?.burialName ?? undefined;
+      ctx.session.orderForm.burialFatherName = burial?.burialFatherName ?? undefined;
+      ctx.session.orderForm.burialBirthDate = burial?.birthDate ?? undefined;
+      ctx.session.orderForm.burialDeathDate = burial?.deathDate ?? undefined;
+
+      ctx.session.orderForm.locationData = burial?.coordinates;
+      ctx.session.orderForm.customComment = burial?.notes;
+      ctx.session.orderForm.cemeteryDetails = burial?.cemetery;
+    } catch (e) {
+      console.log(e);
+    }
+
+    await ctx.reply('⏳ Ініціалізую замовлення для цього місця...', Markup.removeKeyboard());
+    // Відправляємо у візард замовлення, де Крок 1 побачить, що burialId вже є, і відправить на вибір послуги
+    await ctx.scene.enter(Scene.CREATE_ORDER_WIZARD);
+  }
+
+  /**
+   * Екшен 2: Редагування існуючого місця пам'яті
+   */
+  @Action(/^memorial_edit_(.+)$/)
+  async onMemorialEdit(@Ctx() ctx: OrderWizardContext) {
+    await ctx.telegram.answerCbQuery(ctx.callbackQuery?.id ?? '').catch(() => null);
+    // @ts-ignore
+    const burialId = ctx.match[1];
+    if (!ctx.session.orderForm) {
+      ctx.session.orderForm = {};
+    }
+    // Тут ти будеш викликати сцену редагування, передаючи туди ID:
+    ctx.session.orderForm.burialId = burialId;
+
+    // 🔥 ГОЛОВНИЙ ФІКС: Надсилаємо сервісне повідомлення, яке згортає/приховує нижнє меню
+    await ctx.reply('⏳ Вхід до режиму редагування...', Markup.removeKeyboard());
+
+    return ctx.scene.enter(Scene.EDIT_BURIAL_WIZARD);
+  }
+
+  /**
+   * Екшен 3: Додавання нового місця пам'яті з меню списку
+   */
+  @Action('client_memorial_add')
+  async onMemorialAdd(@Ctx() ctx: OrderWizardContext) {
+    await ctx.telegram.answerCbQuery(ctx.callbackQuery?.id ?? '').catch(() => null);
+    await ctx.reply('⏳ Перехід до створення картки об\'єкта...', Markup.removeKeyboard());
+    if (!ctx.session.orderForm) {
+      ctx.session.orderForm = {};
+    }
+    ctx.session.orderForm.addBurialOnly = true;
+    // Вхід у твій існуючий візард створення поховання
+    await ctx.scene.enter(Scene.CREATE_BURIAL_WIZARD);
+  }
+
+  /**
    * 4. Слухач усіх інших текстових повідомлень (Логіка "Слухати все" по ТЗ)
    */
   @On('text')
@@ -311,24 +485,4 @@ export class TelegramClientListener {
       OrderStepUa.GetMessage + ` "${text}".\n` + OrderStepUa.HintHelp,
     );
   }
-
-  /**
-   * Допоміжний метод для красивого виведення статусів клієнту
-   */
-  /*private getStatusEmoji(status: OrderStatus): string {
-    switch (status) {
-      case OrderStatus.New:
-        return '🆕';
-      case OrderStatus.InProgress:
-        return '🛠';
-      case OrderStatus.AwaitingConfirmation:
-        return '👀';
-      case OrderStatus.Done:
-        return '✅';
-      case OrderStatus.Canceled:
-        return '❌';
-      default:
-        return '📄';
-    }
-  }*/
 }

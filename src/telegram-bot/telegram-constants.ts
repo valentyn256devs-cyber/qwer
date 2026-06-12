@@ -1,4 +1,4 @@
-import {Markup} from "telegraf";
+import {Context, Markup} from "telegraf";
 
 export const TelegramBot = {
   ClientBot : 'TelegramClient',
@@ -8,12 +8,15 @@ export const TelegramBot = {
 export const Scene = {
   CREATE_ORDER_WIZARD: 'CREATE_ORDER_WIZARD',
   CREATE_BURIAL_WIZARD: 'CREATE_BURIAL_WIZARD',
+  EDIT_BURIAL_WIZARD: 'EDIT_BURIAL_WIZARD',
+  CREATE_PERFORMER_WIZARD: 'CREATE_PERFORMER_WIZARD',
 } as const;
 
 export const OrderStepUa = {
   Loading : '🔄 Завантажую доступні послуги...',
   NoServices: 'Наразі немає доступних послуг. Спробуйте пізніше.',
   ErrorLoadServices: 'Помилка завантаження послуг.',
+  SelectRole: '👤 Виберіть роль: клієнт або виконавець',
   Service: 'Послуга',
   FillCard: 'Зараз необхідно заповнити картку поховання (ПІБ, дати тощо)...',
   ChooseService: 'Будь ласка, оберіть послугу зі списку вище, натиснувши на кнопку.',
@@ -61,8 +64,8 @@ export const OrderStepUa = {
   HintBurialLastName: '✍️ Крок 2.1. <b>Введіть Прізвище померлого:</b>',
   HintBurialName: '✍️ Крок 2.2. <b>Введіть Ім’я померлого:</b>',
   HintBurialFatherName: '✍️ Крок 2.3. <b>Введіть По батькові померлого:</b>',
-  HintBurialDateBirthday: '📅 Крок 2.4. <b>Введіть дату народження померлого:</b>\n<i>(Або натисніть кнопку "Пропустити ➡️")</i>',
-  HintBurialDateDied: '📅 Крок 2.5. <b>Введіть дату смерті померлого:</b>\n<i>(Або натисніть кнопку "Пропустити ➡️")</i>',
+  HintBurialDateBirthday: '📅 Крок 2.4. <b>Введіть дату народження померлого у форматі ДД.ММ.РРРР:</b>\n<i>(Або натисніть кнопку "Пропустити ➡️")</i>',
+  HintBurialDateDied: '📅 Крок 2.5. <b>Введіть дату смерті померлого у форматі ДД.ММ.РРРР:</b>\n<i>(Або натисніть кнопку "Пропустити ➡️")</i>',
   // HintBurialPlaceLocation: '🏛 <b>Вкажіть назву кладовища, сектор або населений пункт:</b>',
 
   HintBurialDateMMYYYY: '📅 <b>Введіть хоча б місяць та рік у форматі ММ.РРРР:</b>\n',
@@ -111,12 +114,18 @@ export const Step = {
 export const MainMenu = {
   CreateOrder: '✨ Створити замовлення',
   MyOrders: '🗂 Мої замовлення',
+  MyBurialsMemorials: 'Мої місця пам’яті',
   Help: 'ℹ️ Допомога',
   Services: '📋 Послуги',
 } as const;
 
 export const mainMenuButtons = Markup.keyboard([
   [MainMenu.Services],
-  [MainMenu.CreateOrder],
+  [MainMenu.CreateOrder, MainMenu.MyBurialsMemorials],
   [MainMenu.MyOrders, MainMenu.Help],
 ]).resize().reply_markup;
+
+export async function showMainMenu(ctx: Context,) {
+  // 🔥 ГОЛОВНИЙ ФІКС 2: Повертаємо головне меню при скасуванні
+  await ctx.reply(OrderStepUa.MainMenu, {reply_markup: mainMenuButtons},);
+}

@@ -30,10 +30,10 @@ export class OrdersService {
       clientEmail,
       telegramId,
       serviceId,
-      customComment,
-      locationType,
-      locationData,
-      cemeteryDetails,
+      // customComment,
+      // locationType,
+      // locationData,
+      // cemeteryDetails,
       burialId,
     } = createOrderDto;
 
@@ -49,10 +49,10 @@ export class OrdersService {
     order.set(OrderTable.Fields.TelegramId, telegramId);
     order.set(OrderTable.Fields.Status, OrderStatus.New);
     order.set(OrderTable.Fields.Service, servicePointer);
-    order.set(OrderTable.Fields.CustomComment, customComment ?? '');
-    order.set(OrderTable.Fields.LocationType, locationType);
-    order.set(OrderTable.Fields.LocationData, locationData);
-    order.set(OrderTable.Fields.CemeteryDetails, cemeteryDetails ?? '');
+    // order.set(OrderTable.Fields.CustomComment, customComment ?? '');
+    // order.set(OrderTable.Fields.LocationType, locationType);
+    // order.set(OrderTable.Fields.LocationData, locationData);
+    // order.set(OrderTable.Fields.CemeteryDetails, cemeteryDetails ?? '');
     order.set(OrderTable.Fields.BurialId, burialId ?? '');
 
     // Ініціалізуємо порожні масиви для майбутніх фотозвітів
@@ -265,10 +265,10 @@ export class OrdersService {
           }
         : null,
       details: {
-        customComment: order.get(OrderTable.Fields.CustomComment) as string,
-        locationType: order.get(OrderTable.Fields.LocationType) as string,
-        locationData: order.get(OrderTable.Fields.LocationData) as string,
-        cemeteryDetails: order.get(OrderTable.Fields.CemeteryDetails) as string,
+        // customComment: order.get(OrderTable.Fields.CustomComment) as string,
+        // locationType: order.get(OrderTable.Fields.LocationType) as string,
+        // locationData: order.get(OrderTable.Fields.LocationData) as string,
+        // cemeteryDetails: order.get(OrderTable.Fields.CemeteryDetails) as string,
         burialId: order.get(OrderTable.Fields.BurialId) as string,
       },
       report: {

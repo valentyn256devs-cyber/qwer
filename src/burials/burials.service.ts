@@ -6,7 +6,7 @@ import {CreateBurialDto} from './dto/create-burial.dto';
 
 @Injectable()
 export class BurialsService {
-  private readonly className= BurialTable.TableName;
+  private readonly className = BurialTable.TableName;
 
   constructor(private readonly back4app: Back4appService) {
   }
@@ -21,8 +21,10 @@ export class BurialsService {
     burial.set(BurialTable.Fields.BurialName, dto.burialName);
     burial.set(BurialTable.Fields.BurialLastName, dto.burialLastName);
     burial.set(BurialTable.Fields.BurialFatherName, dto.burialFatherName);
-    burial.set(BurialTable.Fields.BirthDate, dto.birthDate ? new Date(dto.birthDate) : null);
-    burial.set(BurialTable.Fields.DeathDate, dto.deathDate ? new Date(dto.deathDate) : null);
+    burial.set(BurialTable.Fields.BirthDate, dto.birthDate ?? null);
+    burial.set(BurialTable.Fields.DeathDate, dto.deathDate ?? null);
+    // burial.set(BurialTable.Fields.BirthDate, dto.birthDate ? new Date(dto.birthDate) : null);
+    // burial.set(BurialTable.Fields.DeathDate, dto.deathDate ? new Date(dto.deathDate) : null);
     burial.set(BurialTable.Fields.Cemetery, dto.cemetery);
     burial.set(BurialTable.Fields.Coordinates, dto.coordinates ?? '');
     burial.set(BurialTable.Fields.TelegramId, dto.telegramId ?? '');
@@ -81,6 +83,24 @@ export class BurialsService {
     }
   }
 
+  async updateBurial(id: string, data: Partial<any>): Promise<any> {
+    const query = new Parse.Query(this.className);
+    const obj = await query.get(id);
+
+    if (!obj) throw new Error('Burial object not found');
+
+    // Динамічно проходимо по полях, які надіслав візард
+    if (data.name !== undefined) obj.set('name', data.name);
+    if (data.cemetery !== undefined) obj.set('cemetery', data.cemetery);
+    if (data.coordinates !== undefined) obj.set('coordinates', data.coordinates);
+    if (data.burialLastName !== undefined) obj.set('burialLastName', data.burialLastName);
+    if (data.burialName !== undefined) obj.set('burialName', data.burialName);
+    if (data.burialFatherName !== undefined) obj.set('burialFatherName', data.burialFatherName);
+
+    await obj.save();
+    return obj;
+  }
+
   /**
    * Мапінг з Parse.Object у стандартний об'єкт
    */
@@ -94,8 +114,8 @@ export class BurialsService {
       burialName: obj.get(BurialTable.Fields.BurialName) as string | null,
       burialLastName: obj.get(BurialTable.Fields.BurialLastName) as string | null,
       burialFatherName: obj.get(BurialTable.Fields.BurialFatherName) as string | null,
-      birthDate: obj.get(BurialTable.Fields.BirthDate) as Date | null,
-      deathDate: obj.get(BurialTable.Fields.DeathDate) as Date | null,
+      birthDate: obj.get(BurialTable.Fields.BirthDate) as string | null,
+      deathDate: obj.get(BurialTable.Fields.DeathDate) as string | null,
       cemetery: obj.get(BurialTable.Fields.Cemetery) as string,
       coordinates: obj.get(BurialTable.Fields.Coordinates) as string,
       notes: obj.get(BurialTable.Fields.Notes) as string,

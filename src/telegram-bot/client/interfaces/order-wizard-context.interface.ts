@@ -14,14 +14,24 @@ export interface OrderWizardSession extends WizardSessionData {
     birthDate?: string;
     deathDate?: string;
     cemetery?: string;
+    location?: string;
+    comment?: string;
   };
 }
 
 export interface OrderForm {
   serviceId?: string;
   serviceName?: string;
+  price?: number;
+
   burialId?: string;
   burialDisplayName?: string;
+  burialLastName?: string;
+  burialName?: string;
+  burialFatherName?: string;
+  burialBirthDate?: string;
+  burialDeathDate?: string;
+
   locationType?: 'coordinates' | 'address_text' | 'google_maps';
   locationData?: string;
   cemeteryDetails?: string;
@@ -31,6 +41,9 @@ export interface OrderForm {
   clientPhone?: string;
   clientNickName?: string;
   clientEmail?: string;
+
+  editTargetField?: string;
+  addBurialOnly?: Boolean;
 }
 
 export type OrderWizardContext = Context &
@@ -44,6 +57,11 @@ export type OrderWizardContext = Context &
     pendingBurial?: {
       id: string;
       displayName: string;
+      burialName?: string;
+      burialLastName?: string;
+      burialFatherName?: string;
+      birthDate?: string;
+      deathDate?: string;
     };
     orderForm?: OrderForm;
   };
