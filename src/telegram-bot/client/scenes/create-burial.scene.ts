@@ -68,7 +68,10 @@ export class CreateBurialScene {
       ctx.wizard.state.burialTemp.burialName = ctx.message.text;
       await ctx.reply(OrderStepUa.HintBurialFatherName, {
         parse_mode: 'HTML',
-        reply_markup: Markup.keyboard([[OrderStepUa.Skip]]).resize().oneTime().reply_markup,
+        // reply_markup: Markup.keyboard([[OrderStepUa.Skip]]).resize().oneTime().reply_markup,
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback(OrderStepUa.Skip, 'skip_father_name')],
+        ]).reply_markup,
       });
       ctx.wizard.next();
     }
@@ -79,24 +82,34 @@ export class CreateBurialScene {
    */
   @WizardStep(5)
   async step5(@Ctx() ctx: OrderWizardContext) {
-    if (ctx.message && 'text' in ctx.message) {
-      if (!ctx.wizard.state.burialTemp) {
-        ctx.wizard.state.burialTemp = {};
-      }
+    if (!ctx.wizard.state.burialTemp) {
+      ctx.wizard.state.burialTemp = {};
+    }
 
+    // 🔥 Видаляємо кнопку «Пропустити» у попередньому повідомленні, щоб юзер не тицьнув двічі
+    await ctx.editMessageReplyMarkup({inline_keyboard: []}).catch(() => null);
+
+    if (ctx.has('callback_query') &&
+      'data' in ctx.callbackQuery &&
+      ctx.callbackQuery.data === 'skip_father_name') {
+      await ctx.telegram.answerCbQuery(ctx.callbackQuery.id);
+      ctx.wizard.state.burialTemp.burialFatherName = '';
+    } else if (ctx.message && 'text' in ctx.message) {
       if (ctx.message.text === OrderStepUa.Skip) {
         ctx.wizard.state.burialTemp.burialFatherName = '';
       } else ctx.wizard.state.burialTemp.burialFatherName = ctx.message.text;
-
-      await ctx.reply(
-        OrderStepUa.HintBurialDateBirthday,
-        {
-          parse_mode: 'HTML',
-          reply_markup: Markup.keyboard([[OrderStepUa.Skip]]).resize().oneTime().reply_markup,
-        }
-      );
-      ctx.wizard.next();
     }
+    await ctx.reply(
+      OrderStepUa.HintBurialDateBirthday,
+      {
+        parse_mode: 'HTML',
+        // reply_markup: Markup.keyboard([[OrderStepUa.Skip]]).resize().oneTime().reply_markup,
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback(OrderStepUa.Skip, 'skip_birth_date')],
+        ]).reply_markup,
+      }
+    );
+    ctx.wizard.next();
   }
 
   /**
@@ -104,30 +117,38 @@ export class CreateBurialScene {
    */
   @WizardStep(6)
   async step6(@Ctx() ctx: OrderWizardContext) {
-    if (ctx.message && 'text' in ctx.message) {
-      if (!ctx.wizard.state.burialTemp) {
-        ctx.wizard.state.burialTemp = {};
-      }
+    if (!ctx.wizard.state.burialTemp) {
+      ctx.wizard.state.burialTemp = {};
+    }
 
+    // 🔥 Видаляємо кнопку «Пропустити» у попередньому повідомленні, щоб юзер не тицьнув двічі
+    await ctx.editMessageReplyMarkup({inline_keyboard: []}).catch(() => null);
+
+    if (ctx.has('callback_query') &&
+      'data' in ctx.callbackQuery &&
+      ctx.callbackQuery.data === 'skip_birth_date') {
+      await ctx.telegram.answerCbQuery(ctx.callbackQuery.id);
+      ctx.wizard.state.burialTemp.birthDate = '';
+    } else if (ctx.message && 'text' in ctx.message) {
       const text = ctx.message.text;
       if (text !== OrderStepUa.Skip) {
-
-        ctx.wizard.state.burialTemp.birthDate = text; //this.parseDate(text);
+        ctx.wizard.state.burialTemp.birthDate = text;
       } else {
-        ctx.wizard.state.burialTemp.birthDate = ''; //this.parseDate(text);
-        // await ctx.reply(OrderStepUa.HintBurialDateMMYYYY, { parse_mode: 'HTML' });
-        // return;
+        ctx.wizard.state.burialTemp.birthDate = '';
       }
-
-      await ctx.reply(
-        OrderStepUa.HintBurialDateDied,
-        {
-          parse_mode: 'HTML',
-          reply_markup: Markup.keyboard([[OrderStepUa.Skip]]).resize().oneTime().reply_markup,
-        }
-      );
-      ctx.wizard.next();
     }
+
+    await ctx.reply(
+      OrderStepUa.HintBurialDateDied,
+      {
+        parse_mode: 'HTML',
+        // reply_markup: Markup.keyboard([[OrderStepUa.Skip]]).resize().oneTime().reply_markup,
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback(OrderStepUa.Skip, 'skip_death_date')],
+        ]).reply_markup,
+      }
+    );
+    ctx.wizard.next();
   }
 
   /**
@@ -135,7 +156,19 @@ export class CreateBurialScene {
    */
   @WizardStep(7)
   async step7(@Ctx() ctx: OrderWizardContext) {
-    if (ctx.message && 'text' in ctx.message) {
+    if (!ctx.wizard.state.burialTemp) {
+      ctx.wizard.state.burialTemp = {};
+    }
+
+    // 🔥 Видаляємо кнопку «Пропустити» у попередньому повідомленні, щоб юзер не тицьнув двічі
+    await ctx.editMessageReplyMarkup({inline_keyboard: []}).catch(() => null);
+
+    if (ctx.has('callback_query') &&
+      'data' in ctx.callbackQuery &&
+      ctx.callbackQuery.data === 'skip_death_date') {
+      await ctx.telegram.answerCbQuery(ctx.callbackQuery.id);
+      ctx.wizard.state.burialTemp.deathDate = '';
+    } else if (ctx.message && 'text' in ctx.message) {
       if (!ctx.wizard.state.burialTemp) {
         ctx.wizard.state.burialTemp = {};
       }
@@ -145,20 +178,20 @@ export class CreateBurialScene {
       } else {
         ctx.wizard.state.burialTemp.deathDate = '';
       }
-
-      // 4. Виводимо клавіатуру вибору локації за ТЗ
-      await ctx.reply(Step.Step3, {
-        parse_mode: 'HTML',
-        reply_markup: Markup.keyboard([
-          [BurialMenu.Geo, BurialMenu.GoogleMap],
-          [BurialMenu.Text, BurialMenu.City],
-        ])
-          .oneTime()
-          .resize().reply_markup,
-      });
-
-      ctx.wizard.next();
     }
+
+    // 4. Виводимо клавіатуру вибору локації за ТЗ
+    await ctx.reply(Step.Step3, {
+      parse_mode: 'HTML',
+      reply_markup: Markup.keyboard([
+        [BurialMenu.Geo, BurialMenu.GoogleMap],
+        [BurialMenu.Text, BurialMenu.City],
+      ])
+        .oneTime()
+        .resize().reply_markup,
+    });
+
+    ctx.wizard.next();
   }
 
   /**
@@ -227,8 +260,14 @@ export class CreateBurialScene {
     }
 
     // 2. Безпечно перевіряємо наявність геолокації (Варіант 2 з ТЗ)
-    if (ctx.session.orderForm.locationType === 'coordinates' && 'location' in msg) {
-      ctx.session.orderForm.locationData = `${msg.location.latitude},${msg.location.longitude}`;
+    if (ctx.session.orderForm.locationType === 'coordinates') {
+      if ('location' in msg) {
+        ctx.session.orderForm.locationData = `${msg.location.latitude},${msg.location.longitude}`;
+      } else {
+        // 🔥 ФІКС: Якщо тип «координати», але юзер надіслав текст/стрікер/картинку замість кнопки геопозиції
+        await ctx.reply('⚠️ Будь ласка, надішліть саме вашу геолокацію через кнопку «Поділитися локацією».');
+        return; // 🛑 Зупиняємо флоу, користувач залишається на цьому кроці
+      }
     }
     // 3. Безпечно перевіряємо наявність тексту (Варіанти 1, 3, 4 з ТЗ)
     else if ('text' in msg && msg.text) {
@@ -237,6 +276,10 @@ export class CreateBurialScene {
       await ctx.reply(OrderStepUa.IncorrectLocationFormat);
       return;
     }
+
+    const cleanUpMsg = await ctx.reply('⏳ Обробка локації...', Markup.removeKeyboard());
+    // (Опціонально) Щоб цей технічний рядок не муляв око в чаті, його можна одразу видалити:
+    await ctx.telegram.deleteMessage(ctx.chat?.id ?? '', cleanUpMsg.message_id).catch(() => null);
 
     //
     await ctx.reply(
@@ -263,11 +306,12 @@ export class CreateBurialScene {
       ctx.session.orderForm = {};
     }
 
+    // 🔥 Видаляємо кнопку «Пропустити» у попередньому повідомленні, щоб юзер не тицьнув двічі
+    await ctx.editMessageReplyMarkup({inline_keyboard: []}).catch(() => null);
+
     // Перевіряємо, чи ми щойно зайшли сюди з попереднього кроку (коли користувач ввів локацію)
     // Якщо в повідомленні лежать дані локації або текст кнопки вибору, ми показуємо інструкцію для орієнтирів
     const msg = ctx.message;
-
-    // 2. ОБРОБКА РЕЗУЛЬТАТУ (Коли користувач уже щось надіслав або натиснув кнопку)
 
     // Сценарій А: Користувач натиснув інлайн-кнопку "Пропустити"
     if (ctx.has('callback_query') &&
@@ -291,7 +335,10 @@ export class CreateBurialScene {
       Step.Step4,
       {
         parse_mode: 'HTML',
-        reply_markup: Markup.keyboard([[OrderStepUa.Skip]]).resize().oneTime().reply_markup,
+        // reply_markup: Markup.keyboard([[OrderStepUa.Skip]]).resize().oneTime().reply_markup,
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback(OrderStepUa.Skip, 'skip_additional_info')],
+        ]).reply_markup,
       },
     );
 
@@ -300,10 +347,20 @@ export class CreateBurialScene {
 
   @WizardStep(11)
   async stepAdditionalInfo(@Ctx() ctx: OrderWizardContext) {
-    if (ctx.message && 'text' in ctx.message) {
-      if (!ctx.session.orderForm) {
-        ctx.session.orderForm = {};
-      }
+    await ctx.editMessageReplyMarkup({inline_keyboard: []}).catch(() => null);
+    if (!ctx.session.orderForm) {
+      ctx.session.orderForm = {};
+    }
+
+    // 🔥 Видаляємо кнопку «Пропустити» у попередньому повідомленні, щоб юзер не тицьнув двічі
+    await ctx.editMessageReplyMarkup({inline_keyboard: []}).catch(() => null);
+
+    if (ctx.has('callback_query') &&
+      'data' in ctx.callbackQuery &&
+      ctx.callbackQuery.data === 'skip_additional_info') {
+      await ctx.telegram.answerCbQuery(ctx.callbackQuery.id);
+      ctx.session.orderForm.customComment = '';
+    } else if (ctx.message && 'text' in ctx.message) {
       const text = ctx.message.text;
       if (text !== OrderStepUa.Skip) {
         ctx.session.orderForm.customComment = ctx.message.text;
@@ -324,71 +381,69 @@ export class CreateBurialScene {
    */
   @WizardStep(12)
   async saving(@Ctx() ctx: OrderWizardContext) {
-    if (ctx.message && 'text' in ctx.message) {
-      if (!ctx.wizard.state.burialTemp) {
-        ctx.wizard.state.burialTemp = {};
+    if (!ctx.wizard.state.burialTemp) {
+      ctx.wizard.state.burialTemp = {};
+    }
+
+    if (!ctx.session.orderForm) {
+      ctx.session.orderForm = {};
+    }
+
+    ctx.wizard.state.burialTemp.cemetery = ctx.session.orderForm.cemeteryDetails;
+    ctx.wizard.state.burialTemp.comment = ctx.session.orderForm.customComment;
+    ctx.wizard.state.burialTemp.location = ctx.session.orderForm.locationData;
+
+    try {
+      const temp = ctx.wizard.state.burialTemp;
+
+      // Викликаємо BurialsService для реєстрації об'єкта
+      const newBurial = await this.burialsService.create({
+        name: temp.name ?? '',
+        burialName: temp.burialName,
+        burialLastName: temp.burialLastName,
+        burialFatherName: temp.burialFatherName,
+        birthDate: temp.birthDate,
+        deathDate: temp.deathDate,
+        cemetery: temp.cemetery,
+        telegramId: ctx.from?.id.toString() ?? ctx.from?.username,
+        coordinates: temp.location,
+        notes: temp.comment ?? '',
+      });
+
+      if (ctx.session.orderForm.addBurialOnly) {
+        await ctx.reply(`✅ Анкета про поховання "${newBurial.name}" успішно створено!`);
+      } else {
+        await ctx.reply(`✅ Анкета про поховання "${newBurial.name}" успішно створено! Повертаємось до оформлення заявки...`);
       }
 
-      if (!ctx.session.orderForm) {
-        ctx.session.orderForm = {};
-      }
-
-      ctx.wizard.state.burialTemp.cemetery = ctx.session.orderForm.cemeteryDetails;
-      ctx.wizard.state.burialTemp.comment = ctx.session.orderForm.customComment;
-      ctx.wizard.state.burialTemp.location = ctx.session.orderForm.locationData;
-
-      try {
-        const temp = ctx.wizard.state.burialTemp;
-
-        // Викликаємо BurialsService для реєстрації об'єкта
-        const newBurial = await this.burialsService.create({
-          name: temp.name ?? '',
-          burialName: temp.burialName,
+      // 🔥 Записуємо ID поховання у батьківську сесію замовлення
+      const orderSession = ctx.session.__scenes?.state as OrderWizardSession;
+      if (orderSession) {
+        ctx.session.pendingBurial = {
+          id: newBurial.id,
+          displayName: temp.name ?? '',
           burialLastName: temp.burialLastName,
+          burialName: temp.burialName,
           burialFatherName: temp.burialFatherName,
           birthDate: temp.birthDate,
           deathDate: temp.deathDate,
-          cemetery: temp.cemetery,
-          telegramId: ctx.from?.id.toString() ?? ctx.from?.username,
-          coordinates: temp.location,
-          notes: temp.comment ?? '',
-        });
-
-        if (ctx.session.orderForm.addBurialOnly) {
-          await ctx.reply(`✅ Анкета про поховання "${newBurial.name}" успішно створено!`);
-        } else {
-          await ctx.reply(`✅ Анкета про поховання "${newBurial.name}" успішно створено! Повертаємось до оформлення заявки...`);
         }
-
-        // 🔥 Записуємо ID поховання у батьківську сесію замовлення
-        const orderSession = ctx.session.__scenes?.state as OrderWizardSession;
-        if (orderSession) {
-          ctx.session.pendingBurial = {
-            id: newBurial.id,
-            displayName: temp.name ?? '',
-            burialLastName: temp.burialLastName,
-            burialName: temp.burialName,
-            burialFatherName: temp.burialFatherName,
-            birthDate: temp.birthDate,
-            deathDate: temp.deathDate,
-          }
-        }
-
-        if (ctx.session.orderForm.addBurialOnly) { // якщо додаємо лише карту поховання
-          delete ctx.session.orderForm;
-          await showMainMenu(ctx);
-          await ctx.scene.leave();
-        } else {
-          // Повертаємо користувача назад в сцену замовлення
-          await ctx.scene.enter(Scene.CREATE_ORDER_WIZARD);
-        }
-      } catch (error) {
-        console.error(error);
-        await ctx.reply(OrderStepUa.ErrorSaveOrder);
-        await ctx.reply(OrderStepUa.ReturnToMainMenu, {reply_markup: mainMenuButtons});
-        await showMainMenu(ctx);
-        return ctx.scene.leave();
       }
+
+      if (ctx.session.orderForm.addBurialOnly) { // якщо додаємо лише карту поховання
+        delete ctx.session.orderForm;
+        await showMainMenu(ctx);
+        await ctx.scene.leave();
+      } else {
+        // Повертаємо користувача назад в сцену замовлення
+        await ctx.scene.enter(Scene.CREATE_ORDER_WIZARD);
+      }
+    } catch (error) {
+      console.error(error);
+      await ctx.reply(OrderStepUa.ErrorSaveOrder);
+      await ctx.reply(OrderStepUa.ReturnToMainMenu, {reply_markup: mainMenuButtons});
+      await showMainMenu(ctx);
+      return ctx.scene.leave();
     }
   }
 }

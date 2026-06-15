@@ -35,6 +35,7 @@ export const OrderStepUa = {
   ApproveAndCreate: '✅ Підтверджую і Створюю',
   Order: '🛍 Замовити',
   BackToList: '🔙 Назад до списку',
+  Edit: '✏️ Редагувати дані',
 
   HintSetOrientation: 'Будь ласка, введіть текст орієнтирів або натисніть кнопку "Пропустити".',
   SendMyPhone: '📱 Поділитися номером телефону',

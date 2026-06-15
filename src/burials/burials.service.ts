@@ -90,12 +90,15 @@ export class BurialsService {
     if (!obj) throw new Error('Burial object not found');
 
     // Динамічно проходимо по полях, які надіслав візард
-    if (data.name !== undefined) obj.set('name', data.name);
-    if (data.cemetery !== undefined) obj.set('cemetery', data.cemetery);
-    if (data.coordinates !== undefined) obj.set('coordinates', data.coordinates);
-    if (data.burialLastName !== undefined) obj.set('burialLastName', data.burialLastName);
-    if (data.burialName !== undefined) obj.set('burialName', data.burialName);
-    if (data.burialFatherName !== undefined) obj.set('burialFatherName', data.burialFatherName);
+    if (data.name !== undefined) obj.set(BurialTable.Fields.Name, data.name);
+    if (data.cemetery !== undefined) obj.set(BurialTable.Fields.Cemetery, data.cemetery);
+    if (data.coordinates !== undefined) obj.set(BurialTable.Fields.Coordinates, data.coordinates);
+    if (data.burialLastName !== undefined) obj.set(BurialTable.Fields.BurialLastName, data.burialLastName);
+    if (data.burialName !== undefined) obj.set(BurialTable.Fields.BurialName, data.burialName);
+    if (data.burialFatherName !== undefined) obj.set(BurialTable.Fields.BurialFatherName, data.burialFatherName);
+    if (data.birthDate !== undefined) obj.set(BurialTable.Fields.BirthDate, data.birthDate);
+    if (data.deathDate !== undefined) obj.set(BurialTable.Fields.DeathDate, data.deathDate);
+    if (data.notes !== undefined) obj.set(BurialTable.Fields.Notes, data.notes);
 
     await obj.save();
     return obj;

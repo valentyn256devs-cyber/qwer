@@ -489,6 +489,16 @@ export class CreateOrderScene {
     }
 
     await ctx.reply('⏳ Формую резюме заявки...', Markup.removeKeyboard()).catch(() => null);
+    // ctx.wizard.next();
+    ctx.wizard.selectStep(6);
+    return this.stepPrepareOrder(ctx);
+  }
+
+  @WizardStep(7)
+  async stepPrepareOrder(@Ctx() ctx: OrderWizardContext) {
+    if (!ctx.session.orderForm) {
+      ctx.session.orderForm = {};
+    }
 
     const state = ctx.session.orderForm;
     const lastName = state.burialLastName?.trim() ? state.burialLastName : 'Не вказано';
@@ -502,16 +512,16 @@ export class CreateOrderScene {
     // Виводимо резюме замовлення перед фінальним збереженням за ТЗ
     const summary =
       `📝 <b>ПЕРЕВІРКА ЗАЯВКИ</b>\n\n` +
-      `📦 <b>Назва:</b> ${state.burialDisplayName ?? ''}\n` +
+      `🏷 <b>Назва:</b> ${state.burialDisplayName ?? ''}\n` +
       `📦 <b>Послуга:</b> ${state.serviceName ?? ''}\n` +
       `👤 <b>Прізвище:</b> ${lastName}\n` +
       `👤 <b>Ім'я:</b> ${name}\n` +
       `👤 <b>По батькові:</b> ${father}\n` +
       `📅 <b>Дата народження:</b> ${birth}\n` +
-      `🕯 <b>Дата смерті:</b> ${death}\n` +
-      `📍 <b>Дані місця:</b> ${state.locationData ?? ''}\n` +
-      `💬 <b>Орієнтир:</b> ${state.cemeteryDetails ?? 'Немає'}\n` +
-      `💬 <b>Коментар:</b> ${state.customComment ?? 'Немає'}\n` +
+      `🕯 <b>Дата смерті:</b> ${death}\n\n` +
+      `📍 <b>Локація/Дані місця:</b> ${state.locationData ?? ''}\n` +
+      `👁 <b>Орієнтир:</b> ${state.cemeteryDetails ?? 'Немає'}\n` +
+      `💬 <b>Коментар:</b> ${state.customComment ?? 'Немає'}\n\n` +
       `👤 <b>Клієнт:</b> ${state.clientName ?? ''}\n` +
       `📱 <b>Телефон/Контакти:</b> ${state.clientPhone ?? ''}\n\n`;
 
@@ -519,9 +529,8 @@ export class CreateOrderScene {
       await ctx.reply(summary, {
         parse_mode: 'HTML',
         reply_markup: Markup.inlineKeyboard([
-          [
-            Markup.button.callback(OrderStepUa.ApproveAndCreate, 'confirm_order_save'),
-          ],
+          [Markup.button.callback(OrderStepUa.ApproveAndCreate, 'confirm_order_save')],
+          [Markup.button.callback(OrderStepUa.Edit, 'order_edit_fields')],
           [Markup.button.callback(OrderStepUa.Cancel, 'cancel_order_wizard')],
         ]).reply_markup,
       });
@@ -537,14 +546,99 @@ export class CreateOrderScene {
   /**
    * ФІНАЛ: Збереження в Back4app
    */
-  @WizardStep(7)
+  @WizardStep(8)
   async stepSaveOrder(@Ctx() ctx: OrderWizardContext) {
+    const msg = ctx.message;
+
+    // --- СЦЕНАРІЙ А: Користувач ввів нове значення текстовим повідомленням (Процес редагування) ---
+    if (msg && 'text' in msg && ctx.wizard.state.editFieldTarget) {
+      const newValue = msg.text.trim();
+      const target = ctx.wizard.state.editFieldTarget;
+
+      if (!ctx.session.orderForm) ctx.session.orderForm = {};
+
+      // Записуємо нове значення у відповідне поле сесії
+      if (target === 'edit_burial_displayName') ctx.session.orderForm.burialDisplayName = newValue;
+      else if (target === 'edit_lastName') ctx.session.orderForm.burialLastName = newValue;
+      else if (target === 'edit_name') ctx.session.orderForm.burialName = newValue;
+      else if (target === 'edit_father') ctx.session.orderForm.burialFatherName = newValue;
+      else if (target === 'edit_birth') ctx.session.orderForm.burialBirthDate = newValue;
+      else if (target === 'edit_death') ctx.session.orderForm.burialDeathDate = newValue;
+      else if (target === 'edit_location') {
+        ctx.session.orderForm.locationType = 'address_text'
+        ctx.session.orderForm.locationData = newValue;
+      } else if (target === 'edit_cemeteryDetails') ctx.session.orderForm.cemeteryDetails = newValue;
+      else if (target === 'edit_comment') ctx.session.orderForm.customComment = newValue;
+      else if (target === 'edit_phone') ctx.session.orderForm.clientPhone = newValue;
+
+      await ctx.reply('✅ Дані оновлено.');
+      // Очищуємо маркер редагування
+      delete ctx.wizard.state.editFieldTarget;
+
+      // 🔥 ХАК: Повертаємо покажчик візарда назад на Крок 6 і викликаємо його вручну,
+      // щоб показати оновлене резюме замовлення з новими кнопками!
+      ctx.wizard.selectStep(6);
+      return this.stepPrepareOrder(ctx);
+    }
+
+    // --- СЦЕНАРІЙ Б: Кліки по інлайн-кнопках ---
     // 1. Використовуємо Type Guard, щоб TypeScript знав, що це клік по інлайн-кнопці
     if (ctx.has('callback_query') && 'data' in ctx.callbackQuery) {
       const callbackData = ctx.callbackQuery.data;
 
       // 🔥 ФІКС 1: Викликаємо суворо типізований answerCbQuery через ctx.telegram
       await ctx.telegram.answerCbQuery(ctx.callbackQuery.id);
+
+      // 1. Клік на головну кнопку "Редагувати дані"
+      if (callbackData === 'order_edit_fields') {
+        await ctx.editMessageReplyMarkup({inline_keyboard: []}).catch(() => null);
+
+        const editMenu = [
+          [Markup.button.callback('🏷️ Назва', 'edit_burial_displayName')],
+          [Markup.button.callback('👤 Прізвище', 'edit_lastName'), Markup.button.callback('👤 Ім\'я', 'edit_name')],
+          [Markup.button.callback('👤 По батькові', 'edit_father')],
+          [Markup.button.callback('📅 Дата народження', 'edit_birth'), Markup.button.callback('🕯 Дата смерті', 'edit_death')],
+          [Markup.button.callback('📍 Локація/Дані місця', 'edit_location'), Markup.button.callback('👁 Орієнтир', 'edit_cemeteryDetails')],
+          [Markup.button.callback('💬 Коментар', 'edit_comment'), Markup.button.callback('📱 Телефон', 'edit_phone')],
+          [Markup.button.callback('↩️ Назад до перевірки', 'edit_back_to_summary')]
+        ];
+
+        await ctx.reply('Оберіть, яке саме поле ви бажаєте виправити:', {
+          reply_markup: Markup.inlineKeyboard(editMenu).reply_markup
+        });
+        return; // Залишаємось на 7 кроці, чекаємо вибору поля
+      }
+
+      // 2. Повернення з підменю назад без змін
+      if (callbackData === 'edit_back_to_summary') {
+        await ctx.editMessageReplyMarkup({inline_keyboard: []}).catch(() => null);
+        ctx.wizard.selectStep(6);
+        return (this as any).stepPrepareOrder(ctx);
+      }
+
+      // 3. Обробка вибору конкретного поля для зміни
+      if (callbackData.startsWith('edit_')) {
+        await ctx.editMessageReplyMarkup({inline_keyboard: []}).catch(() => null);
+
+        // Фіксуємо у стані візарду, що саме редагуємо
+        ctx.wizard.state.editFieldTarget = callbackData;
+
+        let promptText = '✍️ Введіть нове значення:';
+
+        if (callbackData === 'edit_burial_displayName') promptText = '✍️ Введіть нову <b>Назву</b> для картки поховання (наприклад: <i>"Могила дідуся"</i>):';
+        else if (callbackData === 'edit_lastName') promptText = '✍️ Введіть нове <b>Прізвище</b> померлого:';
+        else if (callbackData === 'edit_name') promptText = '✍️ Введіть нове <b>Ім\'я</b> померлого:';
+        else if (callbackData === 'edit_father') promptText = '✍️ Введіть нове <b>По батькові</b> померлого:';
+        else if (callbackData === 'edit_birth') promptText = '✍️ Введіть <b>Дату народження</b> (строкою):';
+        else if (callbackData === 'edit_death') promptText = '✍️ Введіть <b>Дату смерті</b> (строкою):';
+        else if (callbackData === 'edit_location') promptText = '✍️ Введіть нову <b>Локацію/Адресу місця</b> або надішліть посилання на карту:';
+        else if (callbackData === 'edit_cemeteryDetails') promptText = '✍️ Введіть новий <b>Орієнтир місця</b> (наприклад: <i>"біля центральної алеї, сектор 4"</i>):';
+        else if (callbackData === 'edit_comment') promptText = '✍️ Введіть новий <b>коментар</b> до замовлення:';
+        else if (callbackData === 'edit_phone') promptText = '✍️ Введіть ваш новий <b>номер телефону</b>:';
+
+        await ctx.reply(promptText, {parse_mode: 'HTML'});
+        return; // Залишаємось на 7 кроці, чекаємо текст від користувача
+      }
 
       if (callbackData === 'confirm_order_save') {
         // Передаємо порожній inlineKeyboard, щоб кнопки миттєво зникли
@@ -556,6 +650,20 @@ export class CreateOrderScene {
         const telegramId = ctx.from.id.toString();
 
         try {
+          if (state?.burialId) {
+            await this.burialsService.updateBurial(state.burialId, {
+              name: state.burialDisplayName,
+              burialLastName: state.burialLastName,
+              burialName: state.burialName,
+              burialFatherName: state.burialFatherName,
+              cemetery: state.locationType === 'address_text' ? state.locationData : undefined,
+              coordinates: state.locationType === 'coordinates' ? state.locationData : undefined,
+              birthDate: state.burialBirthDate,
+              deathDate: state.burialDeathDate,
+              notes: state.cemeteryDetails,
+            }).catch(err => console.log('Помилка оновлення картки поховання:', err));
+          }
+
           const newOrder = await this.ordersService.create({
             clientName: state?.clientName ?? 'Клієнт',
             clientPhone: state?.clientPhone ?? '',

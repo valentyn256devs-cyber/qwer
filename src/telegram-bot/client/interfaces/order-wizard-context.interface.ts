@@ -17,6 +17,8 @@ export interface OrderWizardSession extends WizardSessionData {
     location?: string;
     comment?: string;
   };
+
+  editFieldTarget?: string;
 }
 
 export interface OrderForm {
