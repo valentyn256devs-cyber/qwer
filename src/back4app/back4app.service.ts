@@ -11,6 +11,7 @@ export class Back4appService implements OnModuleInit {
   onModuleInit() {
     const appId = this.configService.get<string>('BACK4APP_APP_ID');
     const jsKey = this.configService.get<string>('BACK4APP_JS_KEY');
+    const masterKey = this.configService.get<string>('BACK4APP_MASTER_KEY');
     const serverUrl = this.configService.get<string>('BACK4APP_SERVER_URL');
 
     if (!appId || !jsKey) {
@@ -18,7 +19,7 @@ export class Back4appService implements OnModuleInit {
       return;
     }
 
-    Parse.initialize(appId, jsKey);
+    Parse.initialize(appId, jsKey, masterKey);
     Parse.CoreManager.set('SERVER_URL', serverUrl);
     // (Parse as any).serverURL = serverUrl;
 
