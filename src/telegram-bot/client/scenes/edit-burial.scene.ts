@@ -48,7 +48,8 @@ export class EditBurialScene {
         [Markup.button.callback('📝 Змінити ПІБ померлого', 'edit_field_fio')],
         [Markup.button.callback('📍 Змінити Цвинтар/Адресу', 'edit_field_cemetery')],
         [Markup.button.callback('🌐 Змінити Координати', 'edit_field_coords')],
-        [Markup.button.callback('❌ Скасувати', 'edit_cancel')],
+        [Markup.button.callback('↩️ Скасувати редагування', 'edit_cancel')],
+        [Markup.button.callback('❌ Видалити місце', 'delete_burial')],
       ];
 
       await ctx.reply(infoText, {
@@ -82,6 +83,22 @@ export class EditBurialScene {
       // Тут можна викликати повернення в головне меню або минулий список:
       await showMainMenu(ctx);
       return ctx.scene.leave();
+    }
+
+    if (callbackData === 'delete_burial') {
+      await ctx.deleteMessage().catch(() => null);
+
+      await ctx.reply('⚠️ <b>Ви впевнені, що бажаєте видалити це місце пам\'яті?</b>\n\nЦю дію можна буде скасувати лише через адміністратора.', {
+        parse_mode: 'HTML',
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback('🗑 Так, видалити', 'confirm_delete_burial')],
+          [Markup.button.callback('↩️ Ні, повернутися', 'cancel_delete_burial')]
+        ]).reply_markup
+      });
+
+      // Переводимо візард на Крок 3, де чекаємо саме на клік підтвердження видалення
+      ctx.wizard.selectStep(3); // Крок 4 (індекс 3)
+      return;
     }
 
     if (!ctx.session.orderForm) {
@@ -164,5 +181,59 @@ export class EditBurialScene {
 
     await showMainMenu(ctx);
     return ctx.scene.leave();
+  }
+
+  @WizardStep(4)
+  async stepHandleDeleteConfirmation(@Ctx() ctx: OrderWizardContext) {
+    const callbackQuery = ctx.callbackQuery;
+
+    // Якщо користувач замість кліку по кнопці підтвердження надіслав текст
+    if (!callbackQuery || !('data' in callbackQuery)) {
+      await ctx.reply('Будь ласка, оберіть дію на кнопках вище 👆');
+      return;
+    }
+
+    const callbackData = callbackQuery.data;
+    await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+    await ctx.deleteMessage().catch(() => null);
+
+    const burialId = ctx.session.orderForm?.burialId;
+
+    // 1. Користувач передумав видаляти — повертаємо на початок редагування
+    if (callbackData === 'cancel_delete_burial') {
+      ctx.wizard.selectStep(0); // Повертаємо на stepInitEdit (Індекс 0)
+      return this.stepInitEdit(ctx);
+    }
+
+    // 2. Користувач підтвердив Софт Деліт
+    if (callbackData === 'confirm_delete_burial') {
+      if (!burialId) {
+        await ctx.reply('❌ Помилка: ID об\'єкта не знайдено.');
+        await showMainMenu(ctx);
+        return ctx.scene.leave();
+      }
+
+      try {
+        await ctx.reply('⏳ Видалення місця пам\'яті...');
+
+        // Викликаємо твій сервіс оновлення, передаючи маркер видалення
+        await this.burialsService.updateBurial(burialId, {
+          isDeleted: true // 🌟 Soft delete маркер для Back4app
+        });
+
+        await ctx.reply('🗑 Місце пам\'яті успішно видалено.');
+
+        // Очищуємо форму
+        delete ctx.session.orderForm;
+
+        await showMainMenu(ctx);
+        return ctx.scene.leave();
+      } catch (error) {
+        console.error('Помилка софт-деліту:', error);
+        await ctx.reply('❌ Не вдалося видалити місце. Спробуйте пізніше.');
+        await showMainMenu(ctx);
+        return ctx.scene.leave();
+      }
+    }
   }
 }

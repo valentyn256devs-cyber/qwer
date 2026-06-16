@@ -49,10 +49,15 @@ export class BurialsService {
   /**
    * Отримання всіх поховань конкретного користувача Telegram
    */
-  async findByTelegramId(telegramId: string) {
+  async findByTelegramId(telegramId: string, includeDeleted = false) {
     const query = new this.back4app.parse.Query(this.className);
     query.equalTo(BurialTable.Fields.TelegramId, telegramId);
     query.descending('createdAt');
+
+    // 🌟 якщо includeDeleted === false, відсікаємо м'яко видалені записи
+    if (!includeDeleted) {
+      query.notEqualTo('isDeleted', true);
+    }
 
     const results = await query.find();
     return results.map(b => this.mapFields(b));
@@ -100,6 +105,8 @@ export class BurialsService {
     if (data.deathDate !== undefined) obj.set(BurialTable.Fields.DeathDate, data.deathDate);
     if (data.notes !== undefined) obj.set(BurialTable.Fields.Notes, data.notes);
 
+    if (data.isDeleted !== undefined) obj.set('isDeleted', data.isDeleted);
+
     await obj.save();
     return obj;
   }
@@ -125,6 +132,8 @@ export class BurialsService {
       telegramId: obj.get(BurialTable.Fields.TelegramId) as string,
       photos: urls,
       createdAt: obj.createdAt,
+
+      isDeleted: obj.get(BurialTable.Fields.isDeleted) as boolean,
     };
   }
 }

@@ -64,29 +64,20 @@ export class TelegramClientListener {
       let responseText = OrderStepUa.ServicesCatalog;
       responseText += OrderStepUa.GenerateOrder;
 
-      /*const inlineButtons = services.map((s, index) => {
-        // Формат: "1. Тест (200 грн)"
-        const shortDesc = s.description ? s.description.replace(/<\/?[^>]+(>|$)/g, "") : 'Опис відсутній';
-        const buttonText = `${index + 1}. ${s.name} (${s.price} грн) - ${shortDesc}`;
-
-        // Обрізаємо текст кнопки, якщо він перевищує 64 символи (ліміт Telegram для гарного відображення на мобільних)
-        const finalText = buttonText.length > 60 ? `${buttonText.substring(0, 57)}...` : buttonText;
-        return [
-          Markup.button.callback(finalText, `client_order_service_${s.id}`),
-        ];
-      });*/
-
       // Формуємо масив рядків. Кожен рядок містить масив із 2 кнопок
       const inlineButtons = services.map((s, index) => {
-        // Кнопка А: Назва + Ціна
         const mainButtonText = `${index + 1}. ${s.name}`;
-        // const mainButtonText = `${index + 1}. ${s.name} (${s.price} грн)`;
-        // Обрізаємо заголовок, якщо він раптом задовгий для однієї з двох кнопок (до 40 символів)
-        const finalMainText = mainButtonText.length > 60 ? `${mainButtonText.substring(0, 57)}...` : mainButtonText;
+
+        // 1. Обрізаємо заголовок, якщо він задовгий
+        let finalMainText = mainButtonText.length > 45 ? `${mainButtonText.substring(0, 42)}...` : mainButtonText;
+
+        // 2. ХАК: Добиваємо рядок нерозривними пробілами до фіксованої довжини (наприклад, 45 символів).
+        // Це змусить кнопку розтягнутися на всю доступну їй ширину, а текст залишиться ліворуч.
+        finalMainText = finalMainText.padEnd(45, '\u00A0');
 
         return [
-          Markup.button.callback(finalMainText, `client_order_service_${s.id}`), // Твоя логіка замовлення
-          Markup.button.callback('ℹ️', `client_service_desc_${s.id}`),     // Нова кнопка опису
+          Markup.button.callback(finalMainText, `client_order_service_${s.id}`),
+          Markup.button.callback('ℹ️', `client_service_desc_${s.id}`),
         ];
       });
 
@@ -233,6 +224,7 @@ export class TelegramClientListener {
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      timeZone: 'Europe/Kyiv',
     });
 
     const CHUNK_SIZE = 5; // Розмір однієї пачки

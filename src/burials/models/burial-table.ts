@@ -12,5 +12,7 @@ export const BurialTable = {
     Photos: 'photos',             // Масив файлів Parse.File[]
     Notes: 'notes',               // Нотатки / Коментарі
     TelegramId: 'telegramId',     // Хто додав (щоб юзер бачив свої поховання)
+
+    isDeleted: 'isDeleted',
   },
 }

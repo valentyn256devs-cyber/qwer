@@ -70,10 +70,9 @@ export class CreateOrderScene {
       // Створюємо інлайн-кнопки з послугами з бази Back4app
       const buttons = services.map((s, index) => {
         const mainButtonText = `${index + 1}. ${s.name}`;
-        // const mainButtonText = `${index + 1}. ${s.name} (${s.price} грн)`;
-        // Обрізаємо заголовок, якщо він раптом задовгий для однієї з двох кнопок (до 40 символів)
-        const finalMainText = mainButtonText.length > 60 ? `${mainButtonText.substring(0, 57)}...` : mainButtonText;
 
+        let finalMainText = mainButtonText.length > 45 ? `${mainButtonText.substring(0, 42)}...` : mainButtonText;
+        finalMainText = finalMainText.padEnd(45, '\u00A0');
         return [
           Markup.button.callback(finalMainText, `service_${s.id}`), // Твоя логіка замовлення
           Markup.button.callback('ℹ️', `client_service_desc_${s.id}`),     // Нова кнопка опису
@@ -167,11 +166,20 @@ export class CreateOrderScene {
       await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
       await ctx.deleteMessage().catch(() => null);
       await showMainMenu(ctx);
+      delete ctx.session.orderForm;
       return ctx.scene.leave();
     } else // користувач обрав послугу --------------------------------------------------------------
     if (callbackData.startsWith('service_')) {
       ctx.wizard.selectStep(11);
       return this.stepAddBurial(ctx);
+    } else // Info -----------------------------------------------------------------------------------
+    if (callbackData.startsWith('client_service_desc_')) {
+      await this.showServiceDescription(ctx, callbackData);
+    } else if (callbackData === 'client_refresh_services_list') {
+      await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+      await ctx.deleteMessage().catch(() => null);
+      ctx.wizard.selectStep(0);
+      return this.stepStart(ctx);
     }
   }
 
@@ -192,6 +200,7 @@ export class CreateOrderScene {
         if (loadingMsg) await ctx.telegram.deleteMessage(chatId, loadingMsg.message_id).catch(() => null);
         await ctx.reply(OrderStepUa.NoServices);
         await showMainMenu(ctx);
+        delete ctx.session.orderForm;
         return ctx.scene.leave();
       }
 
@@ -237,6 +246,7 @@ export class CreateOrderScene {
       console.error(error);
       await ctx.reply(OrderStepUa.ErrorLoadServices);
       await showMainMenu(ctx);
+      delete ctx.session.orderForm;
       return ctx.scene.leave();
     }
   }
@@ -279,7 +289,7 @@ export class CreateOrderScene {
 
     // Сценарій 2: Клік по кнопці "ℹ️ Детальніше" (Розгортання на повний екран)
     if (callbackData.startsWith('client_service_desc_')) {
-      const id = callbackData.replace('client_service_desc_', '');
+      /*const id = callbackData.replace('client_service_desc_', '');
 
       try {
         const service = await this.servicesService.findOne(id);
@@ -309,7 +319,9 @@ export class CreateOrderScene {
       } catch (error) {
         console.error(error);
         await ctx.answerCbQuery(OrderStepUa.ErrorLoadDescription, {show_alert: true}).catch(() => null);
-      }
+      }*/
+
+      await this.showServiceDescription(ctx, callbackData);
       return; // Залишаємось на Кроці 3
     }
 
@@ -327,6 +339,7 @@ export class CreateOrderScene {
       await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
       await ctx.deleteMessage().catch(() => null);
       await showMainMenu(ctx);
+      delete ctx.session.orderForm;
       return ctx.scene.leave();
     }
   }
@@ -362,7 +375,7 @@ export class CreateOrderScene {
       // 🔥 СЦЕНАРІЙ 2: Користувач натиснув на кнопку "ℹ️ Опис"
       else if (callbackData.startsWith('client_service_desc_')) {
         // Тут префікс "client_service_desc_", тому ID послуги — це все, що після 3-го підкреслення
-        const serviceId = callbackData.replace('client_service_desc_', '');
+        /*const serviceId = callbackData.replace('client_service_desc_', '');
 
         try {
           const service = await this.servicesService.findOne(serviceId);
@@ -395,7 +408,9 @@ export class CreateOrderScene {
         } catch (error) {
           console.error(error);
           await ctx.answerCbQuery(OrderStepUa.ErrorLoadDescription, {show_alert: true}).catch(() => null);
-        }
+        }*/
+
+        await this.showServiceDescription(ctx, callbackData);
 
         // ⚠️ ВАЖЛИВО: Робимо return і НЕ викликаємо жодних переходів.
         // Користувач просто закриває модалку й залишається дивитися на список послуг.
@@ -419,6 +434,7 @@ export class CreateOrderScene {
         // Видаляємо інлайн-кнопки або старе повідомлення, щоб не засмічувати чат
         await ctx.deleteMessage().catch(() => null);
         await showMainMenu(ctx);
+        delete ctx.session.orderForm;
         return ctx.scene.leave();
       }
     }
@@ -792,6 +808,49 @@ export class CreateOrderScene {
       console.log(OrderStepUa.SuccessSavedOrder);
     } catch (error) {
       console.error(OrderStepUa.ErrorSavedOrder, error);
+    }
+  }
+
+  private async showServiceDescription(
+    ctx: OrderWizardContext,
+    callbackData: string,
+  ) {
+    const callbackQuery = ctx.callbackQuery;
+    const serviceId = callbackData.replace('client_service_desc_', '');
+    if (!callbackQuery) {
+      return
+    }
+    try {
+      const service = await this.servicesService.findOne(serviceId);
+      if (service && service.description) {
+        await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+
+        const cleanDesc = service.description.replace(/<\/?[^>]+(>|$)/g, "");
+
+        const descriptionText =
+          `<b>🪦 Детальний опис послуги: ${service.name}</b>\n\n` +
+          `💰 <b>Вартість:</b> <code>${service.price} грн</code>\n\n` +
+          `📝 <b>Про послугу:</b>\n<i>${cleanDesc}</i>`;
+
+        // Замінюємо картку товару на повний опис послуги
+        await ctx.editMessageText(descriptionText, {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                Markup.button.callback('🛍 Замовити', `service_${service.id}`),
+                Markup.button.callback('🔙 Назад до списку', 'client_refresh_services_list')
+              ]
+            ]
+          }
+        });
+      } else {
+        await ctx.answerCbQuery(OrderStepUa.NotFoundDescription, {show_alert: true});
+      }
+
+    } catch (error) {
+      console.error(error);
+      await ctx.answerCbQuery(OrderStepUa.ErrorLoadDescription, {show_alert: true}).catch(() => null);
     }
   }
 
