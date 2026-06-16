@@ -16,32 +16,40 @@ export class ServicesService implements OnApplicationBootstrap {
 
   // Автоматичне заповнення тестовими даними при старті додатка
   async onApplicationBootstrap() {
-    const query = new Parse.Query(this.serviceClassName);
-    const count = await query.count();
+    try {
+      const query = new Parse.Query(this.serviceClassName);
+      const count = await query.count();
 
-    if (count === 0) {
-      this.logger.log(
-        'База даних послуг порожня. Заповнюємо тестовими даними...',
-      );
+      if (count === 0) {
+        this.logger.log(
+          'База даних послуг порожня. Заповнюємо тестовими даними...',
+        );
 
-      for (const item of MockServices) {
-        const service = new Parse.Object(this.serviceClassName);
-        service.set(ServiceTable.Fields.Name, item.name);
-        service.set(ServiceTable.Fields.Description, item.description);
-        service.set(ServiceTable.Fields.Price, item.price);
-        await service.save();
+        for (const item of MockServices) {
+          const service = new Parse.Object(this.serviceClassName);
+          service.set(ServiceTable.Fields.Name, item.name);
+          service.set(ServiceTable.Fields.Description, item.description);
+          service.set(ServiceTable.Fields.Price, item.price);
+          await service.save();
+        }
+        this.logger.log('✅ 5 тестових послуг успішно додано в Back4app!');
       }
-      this.logger.log('✅ 5 тестових послуг успішно додано в Back4app!');
+    } catch (error) {
+      this.logger.error('Помилка під час бутстрапу послуг:', error);
     }
   }
 
   // REST API: Отримати всі послуги
   async findAll() {
-    const query = new Parse.Query(this.serviceClassName);
-    query.ascending('price');
+    try {
+      const query = new Parse.Query(this.serviceClassName);
+      query.ascending('price');
 
-    const results = await query.find({ useMasterKey: true });
-    return results.map((s) => this.mapServiceFields(s));
+      const results = await query.find({useMasterKey: true});
+      return results.map((s) => this.mapServiceFields(s));
+    } catch (error) {
+      return Promise.reject(error);
+    }
   }
 
   // REST API: Отримати одну послугу за ID

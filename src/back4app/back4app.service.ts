@@ -14,14 +14,18 @@ export class Back4appService implements OnModuleInit {
     const masterKey = this.configService.get<string>('BACK4APP_MASTER_KEY');
     const serverUrl = this.configService.get<string>('BACK4APP_SERVER_URL');
 
-    if (!appId || !jsKey) {
+    this.logger.log(`appId = ${appId}`)
+    this.logger.log(`jsKey = ${jsKey}`)
+    this.logger.log(`masterKey = ${masterKey}`)
+    this.logger.log(`serverUrl = ${serverUrl}`)
+
+    if (!appId || !jsKey || !masterKey) {
       this.logger.error('Back4app keys are missing in .env file!');
       return;
     }
 
     Parse.initialize(appId, jsKey, masterKey);
-    Parse.CoreManager.set('SERVER_URL', serverUrl);
-    // (Parse as any).serverURL = serverUrl;
+    Parse.CoreManager.set('SERVER_URL', serverUrl ?? '');
 
     this.logger.log('✅ Надійно підключено до Back4app (Parse Server)');
   }
