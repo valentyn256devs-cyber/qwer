@@ -40,7 +40,7 @@ export class ServicesService implements OnApplicationBootstrap {
     const query = new Parse.Query(this.serviceClassName);
     query.ascending('price');
 
-    const results = await query.find();
+    const results = await query.find({ useMasterKey: true });
     return results.map((s) => this.mapServiceFields(s));
   }
 
@@ -48,7 +48,7 @@ export class ServicesService implements OnApplicationBootstrap {
   async findOne(id: string) {
     const query = new Parse.Query(this.serviceClassName);
     try {
-      const service = await query.get(id);
+      const service = await query.get(id, { useMasterKey: true });
       return this.mapServiceFields(service);
     } catch (error) {
       this.logger.error(error);
