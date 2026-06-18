@@ -116,7 +116,7 @@ export const Step = {
 export const MainMenu = {
   CreateOrder: '✨ Створити замовлення',
   MyOrders: '🗂 Мої замовлення',
-  MyBurialsMemorials: 'Мої місця пам’яті',
+  MyBurialsMemorials: '🪦 Мої місця пам’яті',
   Help: 'ℹ️ Допомога',
   Services: '📋 Послуги',
 } as const;

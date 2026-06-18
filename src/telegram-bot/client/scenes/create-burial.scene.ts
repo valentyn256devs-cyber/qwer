@@ -32,6 +32,11 @@ export class CreateBurialScene {
       ctx.session.orderForm = {};
     }
 
+    if (ctx.session.orderForm.addBurialOnly) {
+      await this.onCreateBurial.call(this, ctx).catch(() => null);
+      return
+    }
+
     await ctx.reply('✨ <b>Оберіть дію для продовження:</b>', {
       parse_mode: 'HTML',
       reply_markup: Markup.inlineKeyboard([
@@ -746,6 +751,9 @@ export class CreateBurialScene {
 
       if (ctx.session.orderForm.addBurialOnly) { // якщо додаємо лише карту поховання
         delete ctx.session.orderForm;
+        delete ctx.session.pendingBurial;
+        delete ctx.session.__scenes;
+
         await showMainMenu(ctx);
         await ctx.scene.leave();
       } else {
