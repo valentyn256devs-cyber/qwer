@@ -3,8 +3,18 @@ import {Context, Markup, Telegraf} from 'telegraf';
 import {ServicesService} from '../../../services/services.service';
 import {OrdersService} from '../../../orders/orders.service';
 import {OrderForm, type OrderWizardContext} from '../interfaces/order-wizard-context.interface';
-import {OrderStepUa, Scene, showMainMenu, Step, TelegramBot} from "../../telegram-constants";
+import {
+  editMenuButtons,
+  fetchEditHint,
+  formatToShortPhoneNumber,
+  OrderStepUa,
+  Scene,
+  showMainMenu,
+  Step,
+  TelegramBot
+} from "../../telegram-constants";
 import {BurialsService} from "../../../burials/burials.service";
+import {ServiceResponseDto} from "../../../services/dto/service-response.dto";
 
 @Wizard(Scene.CREATE_ORDER_WIZARD)
 export class CreateOrderScene {
@@ -75,7 +85,7 @@ export class CreateOrderScene {
         finalMainText = finalMainText.padEnd(45, '\u00A0');
         return [
           Markup.button.callback(finalMainText, `service_${s.id}`), // Твоя логіка замовлення
-          Markup.button.callback('ℹ️', `client_service_desc_${s.id}`),     // Нова кнопка опису
+          Markup.button.callback('ℹ️', `client_service_desc_${s.id}_${index}`),     // Нова кнопка опису
         ];
       });
 
@@ -174,7 +184,7 @@ export class CreateOrderScene {
       return this.stepAddBurial(ctx);
     } else // Info -----------------------------------------------------------------------------------
     if (callbackData.startsWith('client_service_desc_')) {
-      await this.showServiceDescription(ctx, callbackData);
+      await this.showServiceDescription(ctx, callbackData, 0);
     } else if (callbackData === 'client_refresh_services_list') {
       await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
       await ctx.deleteMessage().catch(() => null);
@@ -212,22 +222,14 @@ export class CreateOrderScene {
 
       // Рендеримо окремі картки
       for (const [index, s] of services.entries()) {
-        const shortDesc = s.description ? s.description.replace(/<\/?[^>]+(>|$)/g, "") : 'Опис відсутній';
-        const invisibleSpacer = '<code>👉' + '‌️‌️' + ' '.repeat(26) + '</code>';
-
-        const cardMessageText =
-          `<b>🪦 Послуга №${index + 1}: ${s.name}</b>\n` +
-          `💰 <b>Вартість:</b> <code>${s.price} грн</code>\n` +
-          `📝 <b>Коротко:</b> <i>${shortDesc.substring(0, 100)}${shortDesc.length > 100 ? '...' : ''}</i>\n` +
-          `${invisibleSpacer}`;
-
+        const cardMessageText = this.fetchService(s, index);
         await ctx.reply(cardMessageText, {
           parse_mode: 'HTML',
           reply_markup: {
             inline_keyboard: [
               [
                 Markup.button.callback('🛍 Замовити', `service_${s.id}`),
-                Markup.button.callback('ℹ️ Детальніше', `client_service_desc_${s.id}`),
+                Markup.button.callback('ℹ️ Детальніше', `client_service_desc_${s.id}_${index}`),
               ]
             ]
           }
@@ -289,49 +291,36 @@ export class CreateOrderScene {
 
     // Сценарій 2: Клік по кнопці "ℹ️ Детальніше" (Розгортання на повний екран)
     if (callbackData.startsWith('client_service_desc_')) {
-      /*const id = callbackData.replace('client_service_desc_', '');
+      // Розбиваємо рядок за символом "_"
+      const parts = callbackData.split('_');
+      const index = parseInt(parts[4], 10); // перетворюємо індекс у число
 
-      try {
-        const service = await this.servicesService.findOne(id);
-        if (service && service.description) {
-          await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
-
-          const cleanDesc = service.description.replace(/<\/?[^>]+(>|$)/g, "");
-          const descriptionText =
-            `<b>🪦 Детальний опис послуги: ${service.name}</b>\n\n` +
-            `💰 <b>Вартість:</b> <code>${service.price} грн</code>\n\n` +
-            `📝 <b>Про послугу:</b>\n<i>${cleanDesc}</i>`;
-
-          await ctx.editMessageText(descriptionText, {
-            parse_mode: 'HTML',
-            reply_markup: {
-              inline_keyboard: [
-                [
-                  Markup.button.callback('🛍 Замовити', `service_${service.id}`),
-                  Markup.button.callback('🔙 Назад до списку', 'client_refresh_services_list')
-                ]
-              ]
-            }
-          });
-        } else {
-          await ctx.answerCbQuery(OrderStepUa.NotFoundDescription, {show_alert: true});
-        }
-      } catch (error) {
-        console.error(error);
-        await ctx.answerCbQuery(OrderStepUa.ErrorLoadDescription, {show_alert: true}).catch(() => null);
-      }*/
-
-      await this.showServiceDescription(ctx, callbackData);
+      await this.showServiceDescription(ctx, callbackData, index);
       return; // Залишаємось на Кроці 3
     }
 
     // Сценарій 3: Клік по кнопці «🔙 Назад до списку» всередині опису
-    if (callbackData === 'client_refresh_services_list') {
+    if (callbackData.startsWith('client_refresh_services_list_')) {
       await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
-      await ctx.deleteMessage().catch(() => null);
 
-      // Просто перерендерюємо каталог на цьому ж кроці
-      return this.stepShowServicesCatalog(ctx);
+      const parts = callbackData.split('_');
+      const serviceId = parts[4];
+      const index = parseInt(parts[5], 10); // перетворюємо індекс у число
+
+      const service = await this.servicesService.findOne(serviceId);
+      const cardMessage = this.fetchService(service, index);
+
+      await ctx.editMessageText(cardMessage, {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              Markup.button.callback('🛍 Замовити', `service_${service.id}`),
+              Markup.button.callback('ℹ️ Детальніше', `client_service_desc_${service.id}_${index}`),
+            ]
+          ]
+        }
+      });
     }
 
     // Скасування та вихід в меню
@@ -375,56 +364,36 @@ export class CreateOrderScene {
       // 🔥 СЦЕНАРІЙ 2: Користувач натиснув на кнопку "ℹ️ Опис"
       else if (callbackData.startsWith('client_service_desc_')) {
         // Тут префікс "client_service_desc_", тому ID послуги — це все, що після 3-го підкреслення
-        /*const serviceId = callbackData.replace('client_service_desc_', '');
-
-        try {
-          const service = await this.servicesService.findOne(serviceId);
-          if (service && service.description) {
-            await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
-
-            const cleanDesc = service.description.replace(/<\/?[^>]+(>|$)/g, "");
-
-            const descriptionText =
-              `<b>🪦 Детальний опис послуги: ${service.name}</b>\n\n` +
-              `💰 <b>Вартість:</b> <code>${service.price} грн</code>\n\n` +
-              `📝 <b>Про послугу:</b>\n<i>${cleanDesc}</i>`;
-
-            // Замінюємо картку товару на повний опис послуги
-            await ctx.editMessageText(descriptionText, {
-              parse_mode: 'HTML',
-              reply_markup: {
-                inline_keyboard: [
-                  [
-                    Markup.button.callback('🛍 Замовити', `service_${service.id}`),
-                    Markup.button.callback('🔙 Назад до списку', 'client_refresh_services_list')
-                  ]
-                ]
-              }
-            });
-          } else {
-            await ctx.answerCbQuery(OrderStepUa.NotFoundDescription, {show_alert: true});
-          }
-
-        } catch (error) {
-          console.error(error);
-          await ctx.answerCbQuery(OrderStepUa.ErrorLoadDescription, {show_alert: true}).catch(() => null);
-        }*/
-
-        await this.showServiceDescription(ctx, callbackData);
+        const parts = callbackData.split('_');
+        // const serviceId = parts[3];
+        const index = parseInt(parts[4], 10); // перетворюємо індекс у число
+        await this.showServiceDescription(ctx, callbackData, index);
 
         // ⚠️ ВАЖЛИВО: Робимо return і НЕ викликаємо жодних переходів.
         // Користувач просто закриває модалку й залишається дивитися на список послуг.
         return;
       }
       // 🔥 СЦЕНАРІЙ 3: Натиснуто «🔙 Назад до списку» всередині опису послуги
-      else if (callbackData === 'client_refresh_services_list') {
-        await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+      else if (callbackData.startsWith('client_refresh_services_list_')) {
+        // await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+        const parts = callbackData.split('_');
+        const serviceId = parts[3];
+        const index = parseInt(parts[4], 10); // перетворюємо індекс у число
 
-        // Повністю видаляємо повідомлення з описом
-        await ctx.deleteMessage().catch(() => null);
-        // Повертаємо візард на нульовий (початковий) крок і викликаємо його для перегенерації карток
-        ctx.wizard.selectStep(0);
-        return this.stepStart(ctx);
+        const service = await this.servicesService.findOne(serviceId);
+        const cardMessage = this.fetchService(service, index);
+
+        await ctx.editMessageText(cardMessage, {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                Markup.button.callback('🛍 Замовити', `service_${service.id}`),
+                Markup.button.callback('ℹ️ Детальніше', `client_service_desc_${service.id}_${index}`),
+              ]
+            ]
+          }
+        });
       }
 
       // press back to menu
@@ -492,11 +461,11 @@ export class CreateOrderScene {
 
     // 2. Безпечно перевіряємо, чи це повідомлення з контактом (кнопка "Поділитися номером")
     if ('contact' in msg) {
-      ctx.session.orderForm.clientPhone = msg.contact.phone_number;
+      ctx.session.orderForm.clientPhone = formatToShortPhoneNumber(msg.contact.phone_number);
     }
     // 3. Безпечно перевіряємо, чи користувач ввів телефон текстом вручну
     else if ('text' in msg && msg.text) {
-      ctx.session.orderForm.clientPhone = msg.text;
+      ctx.session.orderForm.clientPhone = formatToShortPhoneNumber(msg.text);
     }
     // 4. Якщо прийшов невідповідний тип повідомлення
     else {
@@ -528,8 +497,8 @@ export class CreateOrderScene {
     // Виводимо резюме замовлення перед фінальним збереженням за ТЗ
     const summary =
       `📝 <b>ПЕРЕВІРКА ЗАЯВКИ</b>\n\n` +
+      `📦 <b>Послуга:</b> <b>${state.serviceName ?? ''}</b>\n\n` +
       `🏷 <b>Назва:</b> ${state.burialDisplayName ?? ''}\n` +
-      `📦 <b>Послуга:</b> ${state.serviceName ?? ''}\n` +
       `👤 <b>Прізвище:</b> ${lastName}\n` +
       `👤 <b>Ім'я:</b> ${name}\n` +
       `👤 <b>По батькові:</b> ${father}\n` +
@@ -537,9 +506,10 @@ export class CreateOrderScene {
       `🕯 <b>Дата смерті:</b> ${death}\n\n` +
       `📍 <b>Локація/Дані місця:</b> ${state.locationData ?? ''}\n` +
       `👁 <b>Орієнтир:</b> ${state.cemeteryDetails ?? 'Немає'}\n` +
-      `💬 <b>Коментар:</b> ${state.customComment ?? 'Немає'}\n\n` +
+      `💬 <b>Коментар:</b>\n` +
+      `<blockquote>${state.customComment ?? 'Немає'}</blockquote>\n\n` +
       `👤 <b>Клієнт:</b> ${state.clientName ?? ''}\n` +
-      `📱 <b>Телефон/Контакти:</b> ${state.clientPhone ?? ''}\n\n`;
+      `📱 <b>Телефон/Контакти:</b> ${formatToShortPhoneNumber(state.clientPhone ?? '')}\n\n`;
 
     try {
       await ctx.reply(summary, {
@@ -585,9 +555,9 @@ export class CreateOrderScene {
         ctx.session.orderForm.locationData = newValue;
       } else if (target === 'edit_cemeteryDetails') ctx.session.orderForm.cemeteryDetails = newValue;
       else if (target === 'edit_comment') ctx.session.orderForm.customComment = newValue;
-      else if (target === 'edit_phone') ctx.session.orderForm.clientPhone = newValue;
+      else if (target === 'edit_phone') ctx.session.orderForm.clientPhone = formatToShortPhoneNumber(newValue);
 
-      await ctx.reply('✅ Дані оновлено.');
+      await ctx.reply('✅ Дані успішно оновлено.');
       // Очищуємо маркер редагування
       delete ctx.wizard.state.editFieldTarget;
 
@@ -609,18 +579,8 @@ export class CreateOrderScene {
       if (callbackData === 'order_edit_fields') {
         await ctx.editMessageReplyMarkup({inline_keyboard: []}).catch(() => null);
 
-        const editMenu = [
-          [Markup.button.callback('🏷️ Назва', 'edit_burial_displayName')],
-          [Markup.button.callback('👤 Прізвище', 'edit_lastName'), Markup.button.callback('👤 Ім\'я', 'edit_name')],
-          [Markup.button.callback('👤 По батькові', 'edit_father')],
-          [Markup.button.callback('📅 Дата народження', 'edit_birth'), Markup.button.callback('🕯 Дата смерті', 'edit_death')],
-          [Markup.button.callback('📍 Локація/Дані місця', 'edit_location'), Markup.button.callback('👁 Орієнтир', 'edit_cemeteryDetails')],
-          [Markup.button.callback('💬 Коментар', 'edit_comment'), Markup.button.callback('📱 Телефон', 'edit_phone')],
-          [Markup.button.callback('↩️ Назад до перевірки', 'edit_back_to_summary')]
-        ];
-
         await ctx.reply('Оберіть, яке саме поле ви бажаєте виправити:', {
-          reply_markup: Markup.inlineKeyboard(editMenu).reply_markup
+          reply_markup: Markup.inlineKeyboard(editMenuButtons).reply_markup
         });
         return; // Залишаємось на 7 кроці, чекаємо вибору поля
       }
@@ -639,7 +599,9 @@ export class CreateOrderScene {
         // Фіксуємо у стані візарду, що саме редагуємо
         ctx.wizard.state.editFieldTarget = callbackData;
 
-        let promptText = '✍️ Введіть нове значення:';
+        let promptText = fetchEditHint(callbackData)
+
+        /*let promptText = '✍️ Введіть нове значення:';
 
         if (callbackData === 'edit_burial_displayName') promptText = '✍️ Введіть нову <b>Назву</b> для картки поховання (наприклад: <i>"Могила дідуся"</i>):';
         else if (callbackData === 'edit_lastName') promptText = '✍️ Введіть нове <b>Прізвище</b> померлого:';
@@ -650,9 +612,16 @@ export class CreateOrderScene {
         else if (callbackData === 'edit_location') promptText = '✍️ Введіть нову <b>Локацію/Адресу місця</b> або надішліть посилання на карту:';
         else if (callbackData === 'edit_cemeteryDetails') promptText = '✍️ Введіть новий <b>Орієнтир місця</b> (наприклад: <i>"біля центральної алеї, сектор 4"</i>):';
         else if (callbackData === 'edit_comment') promptText = '✍️ Введіть новий <b>коментар</b> до замовлення:';
-        else if (callbackData === 'edit_phone') promptText = '✍️ Введіть ваш новий <b>номер телефону</b>:';
+        else if (callbackData === 'edit_phone') promptText = '✍️ Введіть ваш новий <b>номер телефону</b>:';*/
 
-        await ctx.reply(promptText, {parse_mode: 'HTML'});
+        await ctx.reply(promptText, {
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard([
+            // [Markup.button.switchToCurrentChat('✏️ Змінити поточне', currentValue)],
+            // [Markup.button.callback(OrderStepUa.GoBack, 'edit_back_to_summary')],
+            [Markup.button.callback(OrderStepUa.GoBack, 'order_edit_fields')],
+          ]).reply_markup
+        });
         return; // Залишаємось на 7 кроці, чекаємо текст від користувача
       }
 
@@ -682,7 +651,7 @@ export class CreateOrderScene {
 
           const newOrder = await this.ordersService.create({
             clientName: state?.clientName ?? 'Клієнт',
-            clientPhone: state?.clientPhone ?? '',
+            clientPhone: formatToShortPhoneNumber(state?.clientPhone ?? ''),
             telegramId: telegramId,
             serviceId: state?.serviceId ?? '',
             customComment: state?.customComment,
@@ -739,7 +708,7 @@ export class CreateOrderScene {
 
     // 2. Формуємо базове резюме замовлення
     let adminSummary = `🔔 <b>НОВА ЗАЯВКА №${orderId}</b>\n\n`;
-    adminSummary += `📦 <b>Послуга:</b> ${state.serviceName ?? 'Індивідуальна'}\n`;
+    adminSummary += `📦 <b>Послуга:</b> ${state.serviceName ?? 'Індивідуальна'}\n\n`;
     adminSummary += `📍 <b>Місце:</b> ${state.locationData ?? ''}\n`;
     // adminSummary += `📍 <b>Місце:</b> (${state.locationType ?? 'Текст'}) ${state.locationData ?? ''}\n`;
     if (state.cemeteryDetails) {
@@ -762,9 +731,9 @@ export class CreateOrderScene {
       adminSummary += `👤 <b>Покійний:</b> ${bLastName} ${bName} ${bFatherName}\n`;
       adminSummary += `📅 <b>Роки життя:</b> ${birthStr} — ${deathStr}\n`;
       // adminSummary += `🏛 <b>Цвинтар:</b> ${burialData.cemetery ?? 'Не вказано'}\n`;
-      if (burialData.coordinates) {
+      /*if (burialData.coordinates) {
         adminSummary += `🌐 <b>Координати:</b> <code>${burialData.coordinates}</code>\n`;
-      }
+      }*/
       // if (burialData.notes) {
       //   adminSummary += `📝 <b>Нотатки анкети:</b> <i>${burialData.notes}</i>\n`;
       // }
@@ -774,7 +743,7 @@ export class CreateOrderScene {
     // Додаємо дані клієнта наприкінці
     adminSummary += `👤 <b>КЛІЄНТ:</b>\n`;
     adminSummary += `▪️ <b>Ім'я:</b> ${state.clientName ?? 'Не вказано'}\n`;
-    adminSummary += `▪️ <b>Телефон:</b> ${state.clientPhone ?? 'Немає номера'}\n`;
+    adminSummary += `▪️ <b>Телефон:</b> ${formatToShortPhoneNumber(state.clientPhone ?? 'Немає номера')}\n`;
     if (state.clientNickName) adminSummary += `▪️ <b>Username:</b> @${state.clientNickName.replace('@', '')}\n`;
     if (state.clientEmail) adminSummary += `▪️ <b>Email:</b> ${state.clientEmail}\n`;
 
@@ -814,9 +783,13 @@ export class CreateOrderScene {
   private async showServiceDescription(
     ctx: OrderWizardContext,
     callbackData: string,
+    index: number
   ) {
     const callbackQuery = ctx.callbackQuery;
-    const serviceId = callbackData.replace('client_service_desc_', '');
+    // const serviceId = callbackData.replace('client_service_desc_', '');
+    const parts = callbackData.split('_');
+    const serviceId = parts[3];
+
     if (!callbackQuery) {
       return
     }
@@ -839,7 +812,7 @@ export class CreateOrderScene {
             inline_keyboard: [
               [
                 Markup.button.callback('🛍 Замовити', `service_${service.id}`),
-                Markup.button.callback('🔙 Назад до списку', 'client_refresh_services_list')
+                Markup.button.callback('🔙 Назад до списку', `client_refresh_services_list_${serviceId}_${index}`)
               ]
             ]
           }
@@ -852,6 +825,16 @@ export class CreateOrderScene {
       console.error(error);
       await ctx.answerCbQuery(OrderStepUa.ErrorLoadDescription, {show_alert: true}).catch(() => null);
     }
+  }
+
+  private fetchService(s: ServiceResponseDto, index: number) {
+    const shortDesc = s.description ? s.description.replace(/<\/?[^>]+(>|$)/g, "") : 'Опис відсутній';
+    const invisibleSpacer = '<code>👉' + '‌️‌️' + ' '.repeat(26) + '</code>';
+
+    return `<b>🪦 Послуга №${index + 1}: ${s.name}</b>\n` +
+      `💰 <b>Вартість:</b> <code>${s.price} грн</code>\n` +
+      `📝 <b>Коротко:</b> <i>${shortDesc.substring(0, 100)}${shortDesc.length > 100 ? '...' : ''}</i>\n` +
+      `${invisibleSpacer}`;
   }
 
 }

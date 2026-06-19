@@ -3,8 +3,17 @@ import {OrdersService} from '../../orders/orders.service';
 import {ServicesService} from '../../services/services.service';
 import {Context, Markup} from 'telegraf';
 import {type OrderWizardContext} from './interfaces/order-wizard-context.interface';
-import {MainMenu, mainMenuButtons, OrderStepUa, Scene, showMainMenu} from "../telegram-constants";
+import {
+  getOrderStatusDescription,
+  MainMenu,
+  mainMenuButtons,
+  OrderStepUa,
+  Scene,
+  showMainMenu
+} from "../telegram-constants";
 import {BurialsService} from "../../burials/burials.service";
+import {ServiceResponseDto} from "../../services/dto/service-response.dto";
+import {Message} from "telegraf/types";
 
 @Update()
 export class TelegramClientListener {
@@ -49,7 +58,7 @@ export class TelegramClientListener {
   @Command('services')
   async onServicesCommand(@Ctx() ctx: Context) {
     const loadingMsg = await ctx.reply(OrderStepUa.LoadingServices).catch(() => null);
-    const chatId = ctx.chat?.id ?? '';
+    const chatId = ctx.chat?.id ?? 0;
 
     try {
       const services = await this.servicesService.findAll();
@@ -60,8 +69,15 @@ export class TelegramClientListener {
         return;
       }
 
+      const btnResponse = await this.prepareServicesButtons(ctx, services, chatId, loadingMsg);
+
+      await ctx.reply(btnResponse.responseText, {
+        parse_mode: 'HTML',
+        reply_markup: Markup.inlineKeyboard(btnResponse.inlineButtons).reply_markup
+      });
+
       // 1. Формуємо гарне текстове меню з детальним описом
-      let responseText = OrderStepUa.ServicesCatalog;
+      /*let responseText = OrderStepUa.ServicesCatalog;
       responseText += OrderStepUa.GenerateOrder;
 
       // Формуємо масив рядків. Кожен рядок містить масив із 2 кнопок
@@ -92,7 +108,7 @@ export class TelegramClientListener {
       await ctx.reply(responseText, {
         parse_mode: 'HTML',
         reply_markup: Markup.inlineKeyboard(inlineButtons).reply_markup
-      });
+      });*/
     } catch (error) {
       console.log(error);
       if (loadingMsg) await ctx.telegram.deleteMessage(chatId, loadingMsg.message_id).catch(() => null);
@@ -249,7 +265,7 @@ export class TelegramClientListener {
         response += `📅 <b>Створено:</b> <code>${dateStr}</code>\n`;
         response += `🪦 <b>Місце пам'яті:</b> ${burialPlaceName}\n`;
         response += `📦 <b>Послуга:</b> ${o.service?.name ?? 'Індивідуальна'}\n`;
-        response += `⚙️ <b>Статус:</b> ${o.status}\n\n`;
+        response += `⚙️ <b>Статус:</b> ${getOrderStatusDescription(o.status)}\n\n`;
       }
 
       // Відправляємо кожну пачку окремим повідомленням
@@ -468,4 +484,47 @@ export class TelegramClientListener {
       OrderStepUa.GetMessage + ` "${text}".\n` + OrderStepUa.HintHelp,
     );
   }
+
+  private async prepareServicesButtons(
+    ctx: Context,
+    services: ServiceResponseDto[],
+    chatId: number,
+    loadingMsg: Message.TextMessage | null
+  ) {
+
+    // 1. Формуємо гарне текстове меню з детальним описом
+    let responseText = OrderStepUa.ServicesCatalog;
+    responseText += OrderStepUa.GenerateOrder;
+
+    // Формуємо масив рядків. Кожен рядок містить масив із 2 кнопок
+    const inlineButtons = services.map((s, index) => {
+      const mainButtonText = `${index + 1}. ${s.name}`;
+
+      // 1. Обрізаємо заголовок, якщо він задовгий
+      let finalMainText = mainButtonText.length > 45 ? `${mainButtonText.substring(0, 42)}...` : mainButtonText;
+
+      // 2. ХАК: Добиваємо рядок нерозривними пробілами до фіксованої довжини (наприклад, 45 символів).
+      // Це змусить кнопку розтягнутися на всю доступну їй ширину, а текст залишиться ліворуч.
+      finalMainText = finalMainText.padEnd(45, '\u00A0');
+
+      return [
+        Markup.button.callback(finalMainText, `client_order_service_${s.id}`),
+        Markup.button.callback('ℹ️', `client_service_desc_${s.id}`),
+      ];
+    });
+
+    // Кнопка повернення назад до головного меню
+    inlineButtons.push([
+      Markup.button.callback(OrderStepUa.GoBack, 'client_back_to_menu'),
+    ]);
+
+    // Видаляємо плашку завантаження перед відправкою каталогу
+    if (loadingMsg) await ctx.telegram.deleteMessage(chatId, loadingMsg.message_id).catch(() => null);
+
+    return {
+      responseText,
+      inlineButtons
+    }
+  }
+
 }

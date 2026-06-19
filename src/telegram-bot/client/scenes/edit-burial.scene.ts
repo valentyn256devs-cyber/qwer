@@ -2,7 +2,7 @@ import {Context as Ctx, Wizard, WizardStep} from 'nestjs-telegraf';
 import {Markup} from 'telegraf';
 import {BurialsService} from '../../../burials/burials.service';
 import {type OrderWizardContext} from '../interfaces/order-wizard-context.interface';
-import {OrderStepUa, Scene, showMainMenu} from '../../telegram-constants';
+import {editBurialMenuButtons, fetchEditHint, OrderStepUa, Scene, showMainMenu} from '../../telegram-constants';
 
 @Wizard(Scene.EDIT_BURIAL_WIZARD)
 export class EditBurialScene {
@@ -43,18 +43,28 @@ export class EditBurialScene {
         `🌐 <b>Координати:</b> <code>${b.coordinates || 'Не вказано'}</code>\n\n` +
         `Оберіть, який параметр ви бажаєте змінити:`;
 
-      const buttons = [
+      /*const buttons = [
         [Markup.button.callback('🏷 Змінити назву картки', 'edit_field_name')],
         [Markup.button.callback('📝 Змінити ПІБ померлого', 'edit_field_fio')],
         [Markup.button.callback('📍 Змінити Цвинтар/Адресу', 'edit_field_cemetery')],
         [Markup.button.callback('🌐 Змінити Координати', 'edit_field_coords')],
         [Markup.button.callback('↩️ Скасувати редагування', 'edit_cancel')],
         [Markup.button.callback('❌ Видалити місце', 'delete_burial')],
-      ];
+      ];*/
+      /*[
+      [Markup.button.callback('🏷️ Назва', 'edit_burial_displayName')],
+      [Markup.button.callback('👤 Прізвище', 'edit_lastName'), Markup.button.callback('👤 Ім\'я', 'edit_name')],
+      [Markup.button.callback('👤 По батькові', 'edit_father')],
+      [Markup.button.callback('📅 Дата народження', 'edit_birth'), Markup.button.callback('🕯 Дата смерті', 'edit_death')],
+      [Markup.button.callback('📍 Локація/Дані місця', 'edit_location'), Markup.button.callback('👁 Орієнтир', 'edit_cemeteryDetails')],
+      [Markup.button.callback('💬 Коментар', 'edit_comment'), Markup.button.callback('📱 Телефон', 'edit_phone')],
+      [Markup.button.callback('↩️ Назад', 'edit_back_to_summary')],
+      [Markup.button.callback('❌ Видалити місце', 'delete_burial')],
+    ];*/
 
       await ctx.reply(infoText, {
         parse_mode: 'HTML',
-        reply_markup: Markup.inlineKeyboard(buttons).reply_markup,
+        reply_markup: Markup.inlineKeyboard(editBurialMenuButtons).reply_markup,
       });
 
       ctx.wizard.next();
@@ -107,21 +117,15 @@ export class EditBurialScene {
 
     // Тимчасово записуємо в сесію, яке саме поле юзер хоче відредагувати
     ctx.session.orderForm.editTargetField = callbackData;
-
     await ctx.deleteMessage().catch(() => null);
+    let promptText = fetchEditHint(callbackData)
 
-    let promptText = '';
-    if (callbackData === 'edit_field_name') {
-      promptText = '✍️ Введіть <b>нову внутрішню назву</b> для цієї картки (наприклад: <i>"Могила дідуся"</i>):';
-    } else if (callbackData === 'edit_field_fio') {
-      promptText = '✍️ Введіть нове <b>ПІБ померлого</b> через пробіл (наприклад: <i>"Іванов Петро Сидорович"</i>):';
-    } else if (callbackData === 'edit_field_cemetery') {
-      promptText = '✍️ Введіть нову <b>назву цвинтаря або адресу</b>:';
-    } else if (callbackData === 'edit_field_coords') {
-      promptText = '✍️ Надішліть нові <b>координати</b> текстом (наприклад: <code>50.4501,30.5234</code>):';
-    }
-
-    await ctx.reply(promptText, {parse_mode: 'HTML'});
+    await ctx.reply(promptText, {
+      parse_mode: 'HTML',
+      reply_markup: Markup.inlineKeyboard([
+        [Markup.button.callback(OrderStepUa.GoBack, 'edit_cancel')],
+      ]).reply_markup
+    });
     ctx.wizard.next();
   }
 
@@ -130,6 +134,14 @@ export class EditBurialScene {
    */
   @WizardStep(3)
   async stepSaveNewValue(@Ctx() ctx: OrderWizardContext) {
+    if (ctx.has('callback_query') && 'data' in ctx.callbackQuery) {
+      const callbackData = ctx.callbackQuery.data;
+      if (callbackData === 'edit_cancel') {
+        ctx.wizard.selectStep(1);
+        return this.stepHandleFieldChoice.call(this, ctx).catch(() => null);
+      }
+    }
+
     const msg = ctx.message;
     if (!msg || !('text' in msg)) {
       await ctx.reply('⚠️ Будь ласка, надішліть коректний текст.');
@@ -151,19 +163,15 @@ export class EditBurialScene {
     try {
       const updateData: any = {};
 
-      if (targetField === 'edit_field_name') {
-        updateData.name = newValue;
-      } else if (targetField === 'edit_field_cemetery') {
-        updateData.cemetery = newValue;
-      } else if (targetField === 'edit_field_coords') {
-        updateData.coordinates = newValue;
-      } else if (targetField === 'edit_field_fio') {
-        // Парсимо ПІБ назад на окремі складові для вашої бази
-        const parts = newValue.split(/\s+/);
-        updateData.burialLastName = parts[0] || '';
-        updateData.burialName = parts[1] || '';
-        updateData.burialFatherName = parts[2] || '';
-      }
+      if (targetField === 'edit_burial_displayName') updateData.name = newValue;
+      else if (targetField === 'edit_lastName') updateData.burialLastName = newValue;
+      else if (targetField === 'edit_name') updateData.burialName = newValue;
+      else if (targetField === 'edit_father') updateData.burialFatherName = newValue;
+      else if (targetField === 'edit_birth') updateData.birthDate = newValue;
+      else if (targetField === 'edit_death') updateData.deathDate = newValue;
+      else if (targetField === 'edit_location') updateData.coordinates = newValue;
+      else if (targetField === 'edit_cemeteryDetails') updateData.cemetery = newValue;
+      else if (targetField === 'edit_comment') updateData.notes = newValue;
 
       await this.burialsService.updateBurial(burialId, updateData);
       await ctx.reply('✅ Дані успішно оновлено!');

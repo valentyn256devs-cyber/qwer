@@ -2,7 +2,15 @@ import {Ctx, Wizard, WizardStep} from 'nestjs-telegraf';
 import {Markup} from 'telegraf';
 import {BurialsService} from '../../../burials/burials.service';
 import {type OrderWizardContext, OrderWizardSession} from "../interfaces/order-wizard-context.interface";
-import {BurialMenu, mainMenuButtons, OrderStepUa, Scene, showMainMenu, Step} from "../../telegram-constants";
+import {
+  BurialMenu,
+  generateGoogleMapsUrl,
+  mainMenuButtons,
+  OrderStepUa,
+  Scene,
+  showMainMenu,
+  Step
+} from "../../telegram-constants";
 
 enum CreateBurialStep {
   Start = 1,
@@ -476,7 +484,8 @@ export class CreateBurialScene {
       parse_mode: 'HTML',
       reply_markup: Markup.keyboard([
         [BurialMenu.Geo, BurialMenu.GoogleMap],
-        [BurialMenu.Text, BurialMenu.City],
+        [BurialMenu.Text],
+        // [BurialMenu.Text, BurialMenu.City],
 
         [Markup.button.callback(OrderStepUa.GoBack, 'back_to_previous_step')],
       ])
@@ -503,7 +512,7 @@ export class CreateBurialScene {
     // Якщо користувач прислав не текст, або текст не з кнопок меню
     const validButtons: string[] = [
       BurialMenu.Geo, BurialMenu.GoogleMap,
-      BurialMenu.Text, BurialMenu.City
+      BurialMenu.Text, //BurialMenu.City
     ];
 
     if (!text || !validButtons.includes(text)) {
@@ -520,6 +529,7 @@ export class CreateBurialScene {
 
       await ctx.reply(
         OrderStepUa.SendYourLocation, {
+          parse_mode: 'HTML',
           reply_markup: Markup.keyboard([
             [Markup.button.locationRequest(OrderStepUa.SendMyLocation)],
             [Markup.button.text(OrderStepUa.GoBack)], // 🌟 Звичайна текстова кнопка замість callback
@@ -579,7 +589,8 @@ export class CreateBurialScene {
     // 2. Безпечно перевіряємо наявність геолокації (Варіант 2 з ТЗ)
     if (ctx.session.orderForm.locationType === 'coordinates') {
       if ('location' in msg) {
-        ctx.session.orderForm.locationData = `${msg.location.latitude},${msg.location.longitude}`;
+        ctx.session.orderForm.locationData = generateGoogleMapsUrl(msg.location.latitude, msg.location.longitude);
+        // ctx.session.orderForm.locationData = `${msg.location.latitude},${msg.location.longitude}`;
       } else {
         // 🔥 ФІКС: Якщо тип «координати», але юзер надіслав текст/стрікер/картинку замість кнопки геопозиції
         await ctx.reply('⚠️ Будь ласка, надішліть саме вашу геолокацію через кнопку «Поділитися локацією».');
@@ -619,6 +630,26 @@ export class CreateBurialScene {
    */
   @WizardStep(CreateBurialStep.EnterLocation)
   async stepBurialDescription(@Ctx() ctx: OrderWizardContext) {
+    if (await this.handleBackAction(
+      ctx,
+      CreateBurialStep.ActionChooseLocation - 1,
+      this.stepGeoLocation,
+      async () => {
+        await ctx.reply(Step.Step3, {
+          parse_mode: 'HTML',
+          reply_markup: Markup.keyboard([
+            [BurialMenu.Geo, BurialMenu.GoogleMap],
+            [BurialMenu.Text],
+            [Markup.button.callback(OrderStepUa.GoBack, 'back_to_previous_step')],
+          ])
+            .oneTime()
+            .resize().reply_markup,
+        });
+      }
+    )) {
+      return;
+    }
+
     // 1. Обробка першого входу на цей крок
     if (!ctx.session.orderForm) {
       ctx.session.orderForm = {};
@@ -666,7 +697,27 @@ export class CreateBurialScene {
 
   @WizardStep(CreateBurialStep.AdditionalInfo)
   async stepAdditionalInfo(@Ctx() ctx: OrderWizardContext) {
-    await ctx.editMessageReplyMarkup({inline_keyboard: []}).catch(() => null);
+    if (await this.handleBackAction(
+      ctx,
+      CreateBurialStep.EnterLocation - 1,
+      this.stepBurialDescription,
+      async () => {
+        await ctx.reply(
+          OrderStepUa.HintDescriptionBurialPlace,
+          {
+            parse_mode: 'HTML',
+            reply_markup: Markup.inlineKeyboard([
+              [Markup.button.callback(OrderStepUa.Skip, 'skip_burial_description')],
+              [Markup.button.callback(OrderStepUa.GoBack, 'back_to_previous_step')],
+            ]).reply_markup,
+          }
+        );
+      })
+    ) {
+      return;
+    }
+
+    // await ctx.editMessageReplyMarkup({inline_keyboard: []}).catch(() => null);
     if (!ctx.session.orderForm) {
       ctx.session.orderForm = {};
     }
