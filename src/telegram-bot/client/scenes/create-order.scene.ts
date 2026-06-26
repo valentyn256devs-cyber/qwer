@@ -185,7 +185,7 @@ export class CreateOrderScene {
     } else // Info -----------------------------------------------------------------------------------
     if (callbackData.startsWith('client_service_desc_')) {
       await this.showServiceDescription(ctx, callbackData, 0);
-    } else if (callbackData === 'client_refresh_services_list') {
+    } else if (callbackData.startsWith('client_refresh_services_list_')) {
       await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
       await ctx.deleteMessage().catch(() => null);
       ctx.wizard.selectStep(0);
@@ -355,7 +355,10 @@ export class CreateOrderScene {
           ctx.session.orderForm.serviceName = OrderStepUa.Service;
         }
 
-        await ctx.telegram.answerCbQuery(callbackQuery.id);
+        await ctx.telegram.answerCbQuery(callbackQuery.id).catch(() => null);
+
+        // 🔥 ВИДАЛЯЄМО поточне повідомлення з інлайн-кнопками
+        await ctx.deleteMessage().catch(() => null);
 
         // 🔥 ПЕРЕХІД: Одразу викликаємо інший візард
         await ctx.reply(OrderStepUa.FillCard);
