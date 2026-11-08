@@ -17,7 +17,7 @@ import {BotInitializerService} from "./telegram-bot/bot-init.service";
     ConfigModule.forRoot({
       isGlobal: true,
     }),
-    // 1. Клієнтський бот (дефолтний, без імені)
+    // 1. Клієнтський бот
     TelegrafModule.forRootAsync({
       imports: [ConfigModule],
       botName: TelegramBot.ClientBot,
@@ -26,7 +26,7 @@ import {BotInitializerService} from "./telegram-bot/bot-init.service";
         isGlobal: true,
         token: configService.get<string>('TELEGRAM_BOT_TOKEN') ?? '',
         middlewares: [session()],
-        include: [TelegramClientModule, TelegramExecutorModule]
+        include: [TelegramClientModule],
       }),
       inject: [ConfigService],
     }),
@@ -38,7 +38,21 @@ import {BotInitializerService} from "./telegram-bot/bot-init.service";
       useFactory: (configService: ConfigService) => ({
         isGlobal: true,
         token: configService.get<string>('TELEGRAM_ADMIN_BOT_TOKEN') ?? '',
-        include: [TelegramAdminModule]
+        include: [TelegramAdminModule],
+      }),
+      inject: [ConfigService],
+    }),
+
+    // 3. Бот виконавця (окремий чат-бот)
+    TelegrafModule.forRootAsync({
+      imports: [ConfigModule],
+      botName: TelegramBot.ExecutorBot,
+      useFactory: (configService: ConfigService) => ({
+        botName: TelegramBot.ExecutorBot,
+        isGlobal: true,
+        token: configService.get<string>('TELEGRAM_EXECUTOR_BOT_TOKEN') ?? '',
+        middlewares: [session()],
+        include: [TelegramExecutorModule],
       }),
       inject: [ConfigService],
     }),

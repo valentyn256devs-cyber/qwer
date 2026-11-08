@@ -4,6 +4,7 @@ import {OrderStatus} from "../orders/models/order-status";
 export const TelegramBot = {
   ClientBot: 'TelegramClient',
   AdminBot: 'TelegramAdmin',
+  ExecutorBot: 'TelegramExecutor',
 } as const;
 
 export const Scene = {
