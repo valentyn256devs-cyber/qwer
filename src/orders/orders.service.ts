@@ -7,7 +7,7 @@ import { Back4appService } from '../back4app/back4app.service';
 import * as Parse from 'parse/node';
 import { OrderTable } from './models/order-table';
 import { OrderRevisionTable } from './models/order-revision-table';
-import { OrderStatus } from './models/order-status';
+import { OrderStatus, UnassignReason } from './models/order-status';
 import { CreateOrderDto } from './dto/create-order.dto';
 import {InjectBot} from "nestjs-telegraf";
 import {mainMenuButtons, TelegramBot} from "../telegram-bot/telegram-constants";
@@ -311,6 +311,85 @@ export class OrdersService {
       return this.mapOrderFields(updated);
     } catch (error) {
       throw new BadRequestException(`Помилка призначення: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * ➖ Unassign Executor
+   * Причина обов'язкова. Після Unassign: assignedExecutorId = null, status = AvailableForExecutor.
+   */
+  async unassignExecutor(orderId: string, adminId: string, reason: UnassignReason) {
+    const query = new Parse.Query(this.orderClassName);
+    try {
+      const order = await query.get(orderId);
+      const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
+      if (!currentExecutor) {
+        throw new BadRequestException('На замовленні немає призначеного виконавця');
+      }
+      order.set(OrderTable.Fields.AssignedExecutorId, null);
+      order.set(OrderTable.Fields.UnassignedBy, adminId);
+      order.set(OrderTable.Fields.UnassignedAt, new Date());
+      order.set(OrderTable.Fields.UnassignReason, reason);
+      order.set(OrderTable.Fields.Status, OrderStatus.AvailableForExecutor);
+      const updated = await order.save();
+      return this.mapOrderFields(updated);
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException(`Помилка скасування призначення: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * 🔄 Change Executor
+   * Адмін може вибрати іншого виконавця. Прогрес не втрачається.
+   */
+  async changeExecutor(orderId: string, newExecutorId: string, adminId: string) {
+    const query = new Parse.Query(this.orderClassName);
+    try {
+      const order = await query.get(orderId);
+      const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
+      if (!currentExecutor) {
+        throw new BadRequestException('На замовленні немає призначеного виконавця для заміни');
+      }
+      if (currentExecutor === newExecutorId) {
+        throw new BadRequestException('Новий виконавець співпадає з поточним');
+      }
+      order.set(OrderTable.Fields.AssignedExecutorId, newExecutorId);
+      order.set(OrderTable.Fields.AssignedBy, adminId);
+      order.set(OrderTable.Fields.AssignedAt, new Date());
+      const updated = await order.save();
+      return this.mapOrderFields(updated);
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException(`Помилка зміни виконавця: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * 👑 Take Over
+   * Адміністратор стає виконавцем замовлення.
+   * Один користувач може мати декілька ролей: Admin + Executor.
+   */
+  async takeOverExecutor(orderId: string, adminId: string) {
+    const query = new Parse.Query(this.orderClassName);
+    try {
+      const order = await query.get(orderId);
+      const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
+      if (currentExecutor === adminId) {
+        throw new BadRequestException('Ви вже є виконавцем цього замовлення');
+      }
+      order.set(OrderTable.Fields.AssignedExecutorId, adminId);
+      order.set(OrderTable.Fields.AssignedBy, adminId);
+      order.set(OrderTable.Fields.AssignedAt, new Date());
+      const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+      if (currentStatus === OrderStatus.AvailableForExecutor) {
+        order.set(OrderTable.Fields.Status, OrderStatus.Assigned);
+      }
+      const updated = await order.save();
+      return this.mapOrderFields(updated);
+    } catch (error) {
+      if (error instanceof BadRequestException) throw error;
+      throw new BadRequestException(`Помилка переймання замовлення: ${(error as Error).message}`);
     }
   }
 
