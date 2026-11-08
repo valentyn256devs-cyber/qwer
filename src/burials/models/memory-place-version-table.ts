@@ -3,8 +3,11 @@ export const MemoryPlaceVersionTable = {
   Fields: {
     MemoryPlaceId: 'memoryPlaceId',
     Version: 'version',
+    PreviousData: 'previousData',
     Data: 'data',
-    ChangedBy: 'changedBy',
+    ChangedBy: 'changedBy',        // executor who proposed
+    AdminReviewedBy: 'adminReviewedBy',
+    ClientReviewedBy: 'clientReviewedBy',
     ChangedAt: 'changedAt',
     OrderId: 'orderId',
   },
