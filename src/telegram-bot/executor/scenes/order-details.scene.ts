@@ -34,21 +34,14 @@ export class OrderDetailsScene {
       ? await this.burialsService.findBurialById(order.details.burialId).catch(() => undefined)
       : undefined;
 
-    const deadline = order.deadlines?.executionDeadline
-      ? new Date(order.deadlines.executionDeadline)
-      : null;
-    const now = new Date();
-    const hoursLeft = deadline
-      ? Math.max(0, Math.round((deadline.getTime() - now.getTime()) / (1000 * 60 * 60)))
-      : null;
-
+    const overdueMark = (order as any).isOverdue ? '\n🔴 <b>ПРОСТРОЧЕНО</b>' : '';
     const msg =
-      `📄 <b>Замовлення №${order.id}</b>\n\n` +
+      `📄 <b>Замовлення №${order.id}</b>${overdueMark}\n\n` +
       `📌 <b>Послуга:</b> ${order.service?.name ?? '—'}\n` +
       `💰 Ціна: ${order.service?.price ?? '—'}\n` +
       `📅 Дата: ${order.deadlines?.serviceDateFrom ? new Date(order.deadlines.serviceDateFrom).toLocaleDateString('uk-UA') : '—'}\n` +
-      `⏰ Deadline: ${deadline ? deadline.toLocaleString('uk-UA') : '—'}\n` +
-      `⏱ Час до deadline: ${hoursLeft !== null ? `${hoursLeft} год` : '—'}\n` +
+      `⏰ Виконати до: ${(order as any).deadlineDisplay?.executionDeadline ?? '—'}\n` +
+      `⏱ Залишилось: ${(order as any).deadlineDisplay?.remaining ?? '—'}\n` +
       `📊 Статус: <b>${order.status}</b>\n\n` +
       `👤 <b>Клієнт:</b>\n` +
       `  • Ім'я: ${order.client?.name ?? '—'}\n` +
@@ -65,7 +58,7 @@ export class OrderDetailsScene {
 
     await ctx.reply(msg, { parse_mode: 'HTML' });
 
-    const actions = buildActions(order.status);
+    const actions = buildActions(order.status, orderId);
     if (actions.length > 0) {
       await ctx.reply(ExecutorConst.ChooseAction, {
         reply_markup: Markup.inlineKeyboard(actions).reply_markup,
@@ -80,22 +73,22 @@ export class OrderDetailsScene {
   }
 }
 
-function buildActions(status: string): any[][] {
+function buildActions(status: string, orderId: string): any[][] {
   switch (status) {
     case OrderStatus.Assigned:
       return [
-        [Markup.button.callback(ExecutorConst.StartButton, 'executor_start')],
-        [Markup.button.callback(ExecutorConst.ProposeUpdateButton, 'executor_propose_update')],
-        [Markup.button.callback(ExecutorConst.ClarifyButton, 'executor_clarify')],
-        [Markup.button.callback(ExecutorConst.ReportProblemButton, 'executor_report_problem')],
-        [Markup.button.callback(ExecutorConst.CannotCompleteButton, 'executor_cannot_complete')],
+        [Markup.button.callback(ExecutorConst.StartButton, `executor_start_${orderId}`)],
+        [Markup.button.callback(ExecutorConst.ProposeUpdateButton, `executor_propose_update_${orderId}`)],
+        [Markup.button.callback(ExecutorConst.ClarifyButton, `executor_clarify_${orderId}`)],
+        [Markup.button.callback(ExecutorConst.ReportProblemButton, `executor_report_problem_${orderId}`)],
+        [Markup.button.callback(ExecutorConst.CannotCompleteButton, `executor_cannot_complete_${orderId}`)],
       ];
     case OrderStatus.InProgress:
       return [
-        [Markup.button.callback(ExecutorConst.ProposeUpdateButton, 'executor_propose_update')],
-        [Markup.button.callback(ExecutorConst.ClarifyButton, 'executor_clarify')],
-        [Markup.button.callback(ExecutorConst.ReportProblemButton, 'executor_report_problem')],
-        [Markup.button.callback(ExecutorConst.CannotCompleteButton, 'executor_cannot_complete')],
+        [Markup.button.callback(ExecutorConst.ProposeUpdateButton, `executor_propose_update_${orderId}`)],
+        [Markup.button.callback(ExecutorConst.ClarifyButton, `executor_clarify_${orderId}`)],
+        [Markup.button.callback(ExecutorConst.ReportProblemButton, `executor_report_problem_${orderId}`)],
+        [Markup.button.callback(ExecutorConst.CannotCompleteButton, `executor_cannot_complete_${orderId}`)],
       ];
     default:
       return [];

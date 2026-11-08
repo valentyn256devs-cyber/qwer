@@ -22,23 +22,15 @@ export class OpenOrdersScene {
       }
 
       for (const order of orders) {
-        const deadline = order.deadlines?.executionDeadline
-          ? new Date(order.deadlines.executionDeadline)
-          : null;
-        const now = new Date();
-        const hoursLeft = deadline
-          ? Math.max(0, Math.round((deadline.getTime() - now.getTime()) / (1000 * 60 * 60)))
-          : null;
-
+        const overdueMark = (order as any).isOverdue ? ' 🔴 <b>ПРОСТРОЧЕНО</b>' : '';
         const msg =
-          `📌 <b>Замовлення №${order.id}</b>\n` +
-          `#\u200B${order.id}\n` +
+          `📌 <b>Замовлення №${order.id}</b>${overdueMark}\n` +
           `#\u200B${order.id}\n` +
           `🏷 Послуга: <b>${order.service?.name ?? '—'}</b>\n` +
-          `📍 Ареса / кладовище: ${order.details?.burialId ? 'див. картку' : '—'}\n` +
+          `📍 Адреса / кладовище: ${order.details?.burialId ? 'див. картку' : '—'}\n` +
           `📅 Бажана дата: ${order.deadlines?.serviceDateFrom ? new Date(order.deadlines.serviceDateFrom).toLocaleDateString('uk-UA') : '—'}\n` +
-          `⏰ Deadline: ${deadline ? deadline.toLocaleString('uk-UA') : '—'}\n` +
-          `⏱ Час до deadline: ${hoursLeft !== null ? `${hoursLeft} год` : '—'}\n` +
+          `⏰ Виконати до: ${(order as any).deadlineDisplay?.executionDeadline ?? '—'}\n` +
+          `⏱ Залишилось: ${(order as any).deadlineDisplay?.remaining ?? '—'}\n` +
           `📝 Коментар: ${order.report?.adminComment ?? '—'}`;
 
         await ctx.reply(msg, {

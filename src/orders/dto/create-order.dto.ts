@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsArray,
+  IsDateString,
   IsEmail,
   IsIn,
   IsNotEmpty,
@@ -97,4 +98,22 @@ export class CreateOrderDto {
   @IsOptional()
   @IsString()
   burialId?: string;
+
+  /** Req 37: Start of desired service period */
+  @ApiPropertyOptional({ description: 'Початок бажаного періоду виконання (ISO 8601)', example: '2026-08-20T09:00:00Z' })
+  @IsOptional()
+  @IsDateString()
+  serviceDateFrom?: string;
+
+  /** Req 37: End of desired service period */
+  @ApiPropertyOptional({ description: 'Кінець бажаного періоду виконання (ISO 8601)', example: '2026-08-22T18:00:00Z' })
+  @IsOptional()
+  @IsDateString()
+  serviceDateTo?: string;
+
+  /** Req 37: Operational deadline */
+  @ApiPropertyOptional({ description: 'Кінцевий operational deadline (ISO 8601)', example: '2026-08-24T18:00:00Z' })
+  @IsOptional()
+  @IsDateString()
+  executionDeadline?: string;
 }

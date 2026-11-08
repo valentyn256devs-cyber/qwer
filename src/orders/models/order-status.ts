@@ -32,3 +32,33 @@ export const UnassignReasonLabels: Partial<Record<UnassignReason, string>> = {
   [UnassignReason.AdminDecision]: 'Рішення адміністратора',
   [UnassignReason.Other]: 'Інше',
 };
+
+/** Req 43: Executor reports inability to complete the order */
+export enum ExecutorInabilityReason {
+  CannotFindGrave = 'cannot_find_grave',
+  NoAccess = 'no_access',
+  WeatherConditions = 'weather_conditions',
+  HealthIssue = 'health_issue',
+  WrongLocation = 'wrong_location',
+  SafetyIssue = 'safety_issue',
+  MissingInformation = 'missing_information',
+  Other = 'other',
+}
+
+export const ExecutorInabilityReasonLabels: Record<ExecutorInabilityReason, string> = {
+  [ExecutorInabilityReason.CannotFindGrave]: 'Не можу знайти могилу',
+  [ExecutorInabilityReason.NoAccess]: 'Немає доступу',
+  [ExecutorInabilityReason.WeatherConditions]: 'Погодні умови',
+  [ExecutorInabilityReason.HealthIssue]: 'Проблема зі здоровʼям',
+  [ExecutorInabilityReason.WrongLocation]: 'Невірна локація',
+  [ExecutorInabilityReason.SafetyIssue]: 'Питання безпеки',
+  [ExecutorInabilityReason.MissingInformation]: 'Недостатньо інформації',
+  [ExecutorInabilityReason.Other]: 'Інше',
+};
+
+/** Reasons that require a mandatory comment from executor (req 43) */
+export const ExecutorInabilityReasonsRequiringComment: ExecutorInabilityReason[] = [
+  ExecutorInabilityReason.Other,
+  ExecutorInabilityReason.WrongLocation,
+  ExecutorInabilityReason.MissingInformation,
+];
