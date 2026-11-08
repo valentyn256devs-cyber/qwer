@@ -11,6 +11,17 @@ export const Scene = {
   CREATE_BURIAL_WIZARD: 'CREATE_BURIAL_WIZARD',
   EDIT_BURIAL_WIZARD: 'EDIT_BURIAL_WIZARD',
   CREATE_PERFORMER_WIZARD: 'CREATE_PERFORMER_WIZARD',
+  OPEN_ORDERS_SCENE: 'OPEN_ORDERS_SCENE',
+  MY_ORDERS_SCENE: 'MY_ORDERS_SCENE',
+  DONE_ORDERS_SCENE: 'DONE_ORDERS_SCENE',
+  ACCEPT_ORDER_SCENE: 'ACCEPT_ORDER_SCENE',
+  ORDER_DETAILS_SCENE: 'ORDER_DETAILS_SCENE',
+  SEARCH_VERIFY_SCENE: 'SEARCH_VERIFY_SCENE',
+  BEFORE_PHOTOS_SCENE: 'BEFORE_PHOTOS_SCENE',
+  AFTER_PHOTOS_SCENE: 'AFTER_PHOTOS_SCENE',
+  SERVICE_CHECKLIST_SCENE: 'SERVICE_CHECKLIST_SCENE',
+  FINAL_SELFCHECK_SCENE: 'FINAL_SELFCHECK_SCENE',
+  SUBMIT_SCENE: 'SUBMIT_SCENE',
 } as const;
 
 export const OrderStepUa = {
@@ -77,7 +88,7 @@ export const OrderStepUa = {
   HintFullLocation: '✍️ <b>Введіть повний опис місця</b> (Область, Населений пункт, Цвинтар, Сектор/Ряд/Номер):',
   HintDescriptionBurialPlace: '📌 <b>Опишіть візуальні орієнтири поблизу поховання:</b>\n' +
     '(наприклад: "біля великого дуба", "сектор 4, третій ряд від дороги", "поруч із червоним парканом").\n\n' +
-    '<i>Цей крок не є обов\'язковим, ви можете його пропустити, натиснувши кнопку нижче.</i>',
+    '<i>Цей крок не є обов’язковим, ви можете його пропустити, натиснувши кнопку нижче.</i>',
 
   ServicesCatalog: '📋 <b>Каталог послуг сервісу ДОГЛЯД+:</b>\n\n',
   GenerateOrder: '👇 <b>Натисніть на послугу нижче, щоб оформити замовлення:</b>',
@@ -131,7 +142,7 @@ export const mainMenuButtons = Markup.keyboard([
 
 export const editMenuButtons = [
   [Markup.button.callback('🏷️ Назва', 'edit_burial_displayName')],
-  [Markup.button.callback('👤 Прізвище', 'edit_lastName'), Markup.button.callback('👤 Ім\'я', 'edit_name')],
+  [Markup.button.callback('👤 Прізвище', 'edit_lastName'), Markup.button.callback('👤 Ім’я', 'edit_name')],
   [Markup.button.callback('👤 По батькові', 'edit_father')],
   [Markup.button.callback('📅 Дата народження', 'edit_birth'), Markup.button.callback('🕯 Дата смерті', 'edit_death')],
   [Markup.button.callback('📍 Локація/Дані місця', 'edit_location'), Markup.button.callback('👁 Орієнтир', 'edit_cemeteryDetails')],
@@ -141,7 +152,7 @@ export const editMenuButtons = [
 
 export const editBurialMenuButtons = [
   [Markup.button.callback('🏷️ Назва', 'edit_burial_displayName')],
-  [Markup.button.callback('👤 Прізвище', 'edit_lastName'), Markup.button.callback('👤 Ім\'я', 'edit_name')],
+  [Markup.button.callback('👤 Прізвище', 'edit_lastName'), Markup.button.callback('👤 Ім’я', 'edit_name')],
   [Markup.button.callback('👤 По батькові', 'edit_father')],
   [Markup.button.callback('📅 Дата народження', 'edit_birth'), Markup.button.callback('🕯 Дата смерті', 'edit_death')],
   [Markup.button.callback('📍 Локація/Дані місця', 'edit_location'), Markup.button.callback('👁 Орієнтир', 'edit_cemeteryDetails')],
@@ -151,7 +162,6 @@ export const editBurialMenuButtons = [
 ];
 
 export async function showMainMenu(ctx: Context,) {
-  // 🔥 ГОЛОВНИЙ ФІКС 2: Повертаємо головне меню при скасуванні
   await ctx.reply(OrderStepUa.MainMenu, {reply_markup: mainMenuButtons},);
 }
 
@@ -160,7 +170,7 @@ export function fetchEditHint(callbackData: string): string {
 
   if (callbackData === 'edit_burial_displayName') promptText = '✍️ Введіть нову <b>Назву</b> для картки поховання (наприклад: <i>"Могила дідуся"</i>):';
   else if (callbackData === 'edit_lastName') promptText = '✍️ Введіть нове <b>Прізвище</b> померлого:';
-  else if (callbackData === 'edit_name') promptText = '✍️ Введіть нове <b>Ім\'я</b> померлого:';
+  else if (callbackData === 'edit_name') promptText = '✍️ Введіть нове <b>Ім’я</b> померлого:';
   else if (callbackData === 'edit_father') promptText = '✍️ Введіть нове <b>По батькові</b> померлого:';
   else if (callbackData === 'edit_birth') promptText = '✍️ Введіть <b>Дату народження</b> (строкою):';
   else if (callbackData === 'edit_death') promptText = '✍️ Введіть <b>Дату смерті</b> (строкою):';
@@ -172,53 +182,67 @@ export function fetchEditHint(callbackData: string): string {
   return promptText;
 }
 
-export const OrderStatusLabels: Record<OrderStatus, string> = {
+export const OrderStatusLabels: Partial<Record<OrderStatus, string>> = {
   [OrderStatus.New]: 'Нова',
-  [OrderStatus.Pending]: 'В очікуванні',
-  [OrderStatus.InProgress]: 'В роботі',
-  [OrderStatus.AwaitingConfirmation]: 'Очікує підтвердження',
+  [OrderStatus.AwaitingAdminReview]: 'Очікує перевірки адміном',
   [OrderStatus.Confirmed]: 'Підтверджено',
-  [OrderStatus.Rejected]: 'Відхилено',
-  [OrderStatus.PendingClarification]: 'Потребує уточнення',
+  [OrderStatus.AvailableForExecutor]: 'Доступно для виконавця',
+  [OrderStatus.Assigned]: 'Призначено',
+  [OrderStatus.AwaitingClientConfirmation]: 'Очікує підтвердження клієнта',
+  [OrderStatus.InProgress]: 'В роботі',
+  [OrderStatus.AwaitingCompletionReview]: 'Очікує перевірки виконання',
+  [OrderStatus.RevisionRequired]: 'Потребує доробки',
   [OrderStatus.Done]: 'Виконано',
+  [OrderStatus.Rejected]: 'Відхилено',
   [OrderStatus.Canceled]: 'Скасовано',
+  [OrderStatus.OnHold]: 'На утриманні',
+  [OrderStatus.PendingClarification]: 'Потребує уточнення',
 };
 
-// Функція для отримання опису
 export function getOrderStatusDescription(status: OrderStatus): string {
   return OrderStatusLabels[status] ?? 'Невідомий статус';
 }
 
-export function formatToShortPhoneNumber(phone: string): string {
-  // 1. Залишаємо лише цифри (видаляємо +, пробіли, дефіси, дужки)
-  const cleanPhone = phone.replace(/\D/g, '');
-
-  // 2. Якщо номер починається з 380, прибираємо "38"
-  if (cleanPhone.startsWith('380') && cleanPhone.length === 12) {
-    return cleanPhone.substring(2); // поверне рядок починаючи з 0...
-  }
-
-  // 3. Якщо користувач ввів відразу у форматі 8066... (довжина 11 символів), прибираємо "8"
-  if (cleanPhone.startsWith('80') && cleanPhone.length === 11) {
-    return cleanPhone.substring(1);
-  }
-
-  // 4. Якщо номер вже у форматі 066... (довжина 10 символів) — повертаємо як є
-  if (cleanPhone.startsWith('0') && cleanPhone.length === 10) {
-    return cleanPhone;
-  }
-
-  // Якщо формат зовсім невідомий, повертаємо очищений від бруду оригінал
-  // return cleanPhone;
-  return phone;
-}
-
-export function generateGoogleMapsUrl(latitude: number | string, longitude: number | string, navigate: boolean = false): string {
-  if (navigate) {
-    // Формат для навігації (одразу пропонує прокласти маршрут)
-    return `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
-  }
-
-  // Стандартний формат (просто відкриває точку на карті з маркером)
+export function generateGoogleMapsUrl(latitude: number, longitude: number): string {
   return `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
 }
+
+export function formatToShortPhoneNumber(phone: string): string {
+  const cleanPhone = phone.replace(/\D/g, '');
+
+  if (cleanPhone.startsWith('380') && cleanPhone.length === 12) {
+    return cleanPhone.substring(2);
+  }
+
+  return cleanPhone;
+}
+
+export const ExecutorMenu = {
+  OpenOrders: '📋 Відкриті замовлення',
+  MyOrders: '💼 Мої замовлення',
+  DoneOrders: '✅ Виконані',
+  Help: '🆘 Допомога / Проблема',
+} as const;
+
+export const executorMainMenuButtons = Markup.keyboard([
+  [ExecutorMenu.OpenOrders],
+  [ExecutorMenu.MyOrders, ExecutorMenu.DoneOrders],
+  [ExecutorMenu.Help],
+]).resize().reply_markup;
+
+export const ExecutorActions = {
+  View: '👁 Переглянути',
+  TakeOrder: '🛍 Взяти замовлення',
+  StartWork: '▶️ Почати',
+  RequestUpdate: '🔄 Запросити оновлення',
+  RequestClarification: '❓ Запросити уточнення',
+  ReportProblem: '📝 Повідомити про проблему',
+  CannotComplete: '❌ Не можу виконати замовлення',
+  SubmitWork: '📤 Надіслати роботу на перевірку',
+  ConfirmCorrect: '✅ Підтверджую, що всі роботи виконані',
+  NeedUpdate: '⚠️ Інформація потребує оновлення',
+  AddService: '🛍 Додати послугу',
+  BackToMenu: '↩️ Назад до меню',
+} as const;
+
+export const executorSceneEnterMessage = '👋 Ласкаво просимо до бота виконавця! Оберіть дію з меню нижче:';

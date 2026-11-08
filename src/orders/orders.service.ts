@@ -170,7 +170,7 @@ export class OrdersService {
           ...currentPhotos,
           ...parseFiles,
         ]);
-        order.set(OrderTable.Fields.Status, OrderStatus.AwaitingConfirmation); // Очікує підтвердження від клієнта
+        order.set(OrderTable.Fields.Status, OrderStatus.AwaitingClientConfirmation); // Очікує підтвердження від клієнта
       }
 
       if (adminComment) {
@@ -234,6 +234,85 @@ export class OrdersService {
     return updatedOrder;
   }
 
+  async findAvailable() {
+    const query = new this.back4app.parse.Query(this.orderClassName);
+    query.equalTo(OrderTable.Fields.Status, OrderStatus.AvailableForExecutor);
+    query.include('service');
+    query.descending('createdAt');
+
+    const results = await query.find();
+    return results.map((order) => this.mapOrderFields(order));
+  }
+
+  async findByExecutorId(executorId: string) {
+    const query = new this.back4app.parse.Query(this.orderClassName);
+    query.equalTo(OrderTable.Fields.AssignedExecutorId, executorId);
+    query.include('service');
+    query.descending('createdAt');
+
+    const results = await query.find();
+    return results.map((order) => this.mapOrderFields(order));
+  }
+
+  async startExecution(orderId: string, executorId: string) {
+    const query = new Parse.Query(this.orderClassName);
+    try {
+      const order = await query.get(orderId);
+      const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+      const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
+      if (currentStatus !== OrderStatus.Assigned || currentExecutor !== executorId) {
+        throw new BadRequestException('Замовлення не доступне для запуску');
+      }
+      order.set(OrderTable.Fields.Status, OrderStatus.InProgress);
+      order.set(OrderTable.Fields.StartedAt, new Date());
+      const updated = await order.save();
+      return this.mapOrderFields(updated);
+    } catch (error) {
+      throw new BadRequestException(`Помилка запуску виконання: ${(error as Error).message}`);
+    }
+  }
+
+  async submitForReview(orderId: string, executorId: string, comment?: string) {
+    const query = new Parse.Query(this.orderClassName);
+    try {
+      const order = await query.get(orderId);
+      const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+      const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
+      if (currentStatus !== OrderStatus.InProgress || currentExecutor !== executorId) {
+        throw new BadRequestException('Замовлення не можна здати на перевірку');
+      }
+      if (comment) {
+        order.set(OrderTable.Fields.ExecutorComment, comment);
+      }
+      order.set(OrderTable.Fields.Status, OrderStatus.AwaitingCompletionReview);
+      order.set(OrderTable.Fields.SubmittedAt, new Date());
+      const updated = await order.save();
+      return this.mapOrderFields(updated);
+    } catch (error) {
+      throw new BadRequestException(`Помилка здачі на перевірку: ${(error as Error).message}`);
+    }
+  }
+
+  async assignExecutor(orderId: string, executorId: string, assignedBy: string) {
+    const query = new Parse.Query(this.orderClassName);
+    try {
+      const order = await query.get(orderId);
+      const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+      const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
+      if (currentStatus !== OrderStatus.AvailableForExecutor || currentExecutor) {
+        throw new BadRequestException('Замовлення вже прийняте іншим виконавцем');
+      }
+      order.set(OrderTable.Fields.AssignedExecutorId, executorId);
+      order.set(OrderTable.Fields.AssignedBy, assignedBy);
+      order.set(OrderTable.Fields.AssignedAt, new Date());
+      order.set(OrderTable.Fields.Status, OrderStatus.Assigned);
+      const updated = await order.save();
+      return this.mapOrderFields(updated);
+    } catch (error) {
+      throw new BadRequestException(`Помилка призначення: ${(error as Error).message}`);
+    }
+  }
+
   private mapOrderFields(order: Parse.Object) {
     const service = order.get(OrderTable.Fields.Service) as
       | Parse.Object
@@ -287,6 +366,17 @@ export class OrdersService {
         ),
         adminComment: order.get(OrderTable.Fields.AdminComment) as string,
       },
+      assignment: {
+        executorId: order.get(OrderTable.Fields.AssignedExecutorId) as string | null,
+        assignedBy: order.get(OrderTable.Fields.AssignedBy) as string | null,
+        assignedAt: order.get(OrderTable.Fields.AssignedAt) as Date | null,
+      },
+      deadlines: {
+        serviceDateFrom: order.get(OrderTable.Fields.ServiceDateFrom) as Date | null,
+        serviceDateTo: order.get(OrderTable.Fields.ServiceDateTo) as Date | null,
+        executionDeadline: order.get(OrderTable.Fields.ExecutionDeadline) as Date | null,
+      },
+      executorComment: order.get(OrderTable.Fields.ExecutorComment) as string | null,
     };
   }
 }

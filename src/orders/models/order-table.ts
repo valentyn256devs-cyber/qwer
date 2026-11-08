@@ -7,14 +7,38 @@ export const OrderTable = {
     TelegramId: 'telegramId',
     Status: 'status',
     Service: 'service',
-    // CustomComment: 'customComment',
-    // LocationType: 'locationType',
-    // LocationData: 'locationData',
-    // CemeteryDetails: 'cemeteryDetails',
     ClientPhotos: 'clientPhotos',
     ReportPhotosBefore: 'reportPhotosBefore',
     ReportPhotosAfter: 'reportPhotosAfter',
     AdminComment: 'adminComment',
     BurialId: 'burialId',
+
+    // Executor assignment
+    AssignedExecutorId: 'assignedExecutorId',
+    AssignedBy: 'assignedBy',
+    AssignedAt: 'assignedAt',
+    UnassignedAt: 'unassignedAt',
+    UnassignedBy: 'unassignedBy',
+    UnassignReason: 'unassignReason',
+
+    // Dates / deadlines
+    ServiceDateFrom: 'serviceDateFrom',
+    ServiceDateTo: 'serviceDateTo',
+    ExecutionDeadline: 'executionDeadline',
+
+    // Lifecycle timestamps
+    ConfirmedAt: 'confirmedAt',
+    StartedAt: 'startedAt',
+    SubmittedAt: 'submittedAt',
+    CompletedAt: 'completedAt',
+    CanceledAt: 'canceledAt',
+    CanceledBy: 'canceledBy',
+    CancellationReason: 'cancellationReason',
+    CancellationComment: 'cancellationComment',
+    PreviousStatus: 'previousStatus',
+    CancellationRequestId: 'cancellationRequestId',
+
+    // Executor comment
+    ExecutorComment: 'executorComment',
   },
 } as const;

@@ -1,0 +1,47 @@
+export const ExecutorConst = {
+  OpenOrdersLoading: '📋 Відкриті замовлення (AvailableForExecutor). Завантаження...',
+  OpenOrdersEmpty: 'Наразі немає відкритих замовлень.',
+  OpenOrdersError: '❌ Не вдалося завантажити відкриті замовлення.',
+  OpenOrdersFooter: '⬇️ Оберіть дію для обраного замовлення:',
+  OrderNotFound: '❌ Не вдалося отримати ID замовлення.',
+  OrderNotFoundAssigned: '❌ Замовлення не знайдено або не призначено вам.',
+  OrderNotFoundSimple: '❌ Замовлення не знайдено.',
+  AcceptLoading: '✅ Прийняття замовлення. Перевірка доступності...',
+  AcceptSuccess: (id: string, service: string) =>
+    `✅ <b>Ви успішно прийняли замовлення №${id}!</b>\n\n📌 Послуга: <b>${service}</b>`,
+  AcceptConflict:
+    '❌ <b>Замовлення вже було прийняте іншим виконавцем.</b>\n\n' +
+    'Не допускається ситуація, коли одне замовлення одночасно отримують два виконавця. ' +
+    'Перейдіть до списку відкритих замовлень і оберіть інше.',
+  AcceptError: '❌ Не вдалося прийняти замовлення. Спробуйте пізніше.',
+  EmptyChecklist: '✅ Service Checklist порожній. Пройдіть до фінальної перевірки:',
+  SubmitPrompt:
+    '📤 <b>Надіслати роботу на перевірку</b>\n\n' +
+    'Додайте коментар виконавця (необов\'язково) або натисніть "Пропустити":',
+  BackToMenu: '↩️ Назад до меню',
+  BackToOrders: '↩️ Назад до списку',
+  BackToDetails: '↩️ Назад',
+  BackToChecklist: '↩️ Назад',
+  BackToSelfcheck: '↩️ Назад',
+  ViewButton: '👁 Переглянути',
+  TakeButton: '✅ Взяти замовлення',
+  StartButton: '▶️ Почати',
+  ProposeUpdateButton: '🔄 Запропонувати оновлення Memory Place',
+  ClarifyButton: '❓ Запросити уточнення',
+  ReportProblemButton: '⚠️ Повідомити про проблему',
+  CannotCompleteButton: '❌ Не можу виконати замовлення',
+  SubmitButton: '📤 Надіслати роботу на перевірку',
+  ConfirmSelfcheckButton: '✅ Підтверджую, що всі роботи виконані',
+  NextChecklistButton: '➡️ Далі — Service Checklist',
+  GoSubmitButton: '📤 Надіслати роботу на перевірку',
+  SkipCommentButton: '⏭️ Пропустити коментар',
+  ArrivedButton: '✅ Підтверджую прибуття',
+  SelfcheckButton: '🔍 Фінальна self-check',
+  PhotoUploadHint: '📸 Надішліть фото (одне або кілька разом):',
+  PhotoUploadAfter: '📸 Надішліть фото «після» (одне або кілька разом):',
+  HelpPrompt: '🆘 Оберіть причину проблеми...',
+  ProblemButton: '📝 Повідомити про проблему',
+  CannotCompleteHelpButton: '❌ Не можу виконати замовлення',
+  ChooseAction: '👇 Оберіть дію:',
+  Welcome: '👋 Ласкаво просимо до бота виконавця! Оберіть дію з меню нижче:',
+};

@@ -6,6 +6,7 @@ import { OrdersModule } from './orders/orders.module';
 import { TelegrafModule } from 'nestjs-telegraf';
 import { session } from 'telegraf';
 import {TelegramClientModule} from "./telegram-bot/client/telegram-client.module";
+import {TelegramExecutorModule} from "./telegram-bot/executor/telegram-executor.module";
 import {TelegramBot} from "./telegram-bot/telegram-constants";
 import {TelegramAdminModule} from "./telegram-bot/admin/telegram-admin.module";
 import {BurialsModule} from "./burials/burials.module";
@@ -25,7 +26,7 @@ import {BotInitializerService} from "./telegram-bot/bot-init.service";
         isGlobal: true,
         token: configService.get<string>('TELEGRAM_BOT_TOKEN') ?? '',
         middlewares: [session()],
-        include: [TelegramClientModule]
+        include: [TelegramClientModule, TelegramExecutorModule]
       }),
       inject: [ConfigService],
     }),
@@ -43,6 +44,7 @@ import {BotInitializerService} from "./telegram-bot/bot-init.service";
     }),
 
     TelegramClientModule,
+    TelegramExecutorModule,
     TelegramAdminModule,
 
     ServicesModule,
