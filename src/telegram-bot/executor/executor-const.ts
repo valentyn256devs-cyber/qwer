@@ -44,4 +44,8 @@ export const ExecutorConst = {
   CannotCompleteHelpButton: '❌ Не можу виконати замовлення',
   ChooseAction: '👇 Оберіть дію:',
   Welcome: '👋 Ласкаво просимо до бота виконавця! Оберіть дію з меню нижче:',
+  ContinueWorkButton: '🔧 Продовжити роботу',
+  ContinueWorkMessage: '🔧 Продовжуйте роботу над замовленням. Усі зміни робляться як звичайно.',
+  RevisionPrompt: '🔄 <b>Замовлення потребує ревізії</b>\n\nКоментар адміністратора:',
+  BackToMenuMessage: '↩️ Повернення до головного меню.',
 };

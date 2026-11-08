@@ -6,6 +6,7 @@ import {
 import { Back4appService } from '../back4app/back4app.service';
 import * as Parse from 'parse/node';
 import { OrderTable } from './models/order-table';
+import { OrderRevisionTable } from './models/order-revision-table';
 import { OrderStatus } from './models/order-status';
 import { CreateOrderDto } from './dto/create-order.dto';
 import {InjectBot} from "nestjs-telegraf";
@@ -310,6 +311,150 @@ export class OrdersService {
       return this.mapOrderFields(updated);
     } catch (error) {
       throw new BadRequestException(`Помилка призначення: ${(error as Error).message}`);
+    }
+  }
+
+
+  async revisionRequired(
+    orderId: string,
+    adminId: string,
+    description: string,
+    checklistSteps?: any[],
+    photoIds?: string[],
+  ) {
+    const query = new Parse.Query(this.orderClassName);
+    try {
+      const order = await query.get(orderId);
+      const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+      if (currentStatus !== OrderStatus.AwaitingCompletionReview) {
+        throw new BadRequestException('Замовлення не очікує на перевірку');
+      }
+      order.set(OrderTable.Fields.Status, OrderStatus.RevisionRequired);
+      const updated = await order.save();
+
+      const revision = new Parse.Object(OrderRevisionTable.TableName);
+      revision.set(OrderRevisionTable.Fields.OrderId, orderId);
+      revision.set(OrderRevisionTable.Fields.RevisionNumber, 1);
+      revision.set(OrderRevisionTable.Fields.FromStatus, OrderStatus.AwaitingCompletionReview);
+      revision.set(OrderRevisionTable.Fields.ToStatus, OrderStatus.RevisionRequired);
+      revision.set(OrderRevisionTable.Fields.Description, description);
+      if (checklistSteps) revision.set(OrderRevisionTable.Fields.ChecklistSteps, checklistSteps);
+      if (photoIds) revision.set(OrderRevisionTable.Fields.PhotoIds, photoIds);
+      revision.set(OrderRevisionTable.Fields.CreatedBy, adminId);
+      revision.set(OrderRevisionTable.Fields.CreatedByRole, 'admin');
+      revision.set(OrderRevisionTable.Fields.CreatedAt, new Date());
+      await revision.save();
+
+      return this.mapOrderFields(updated);
+    } catch (error) {
+      throw new BadRequestException(`Помилка створення ревізії: ${(error as Error).message}`);
+    }
+  }
+
+  async resubmitForReview(orderId: string, executorId: string, comment?: string) {
+    const query = new Parse.Query(this.orderClassName);
+    try {
+      const order = await query.get(orderId);
+      const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+      const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
+      if (currentStatus !== OrderStatus.RevisionRequired || currentExecutor !== executorId) {
+        throw new BadRequestException('Замовлення не можна повторно здати');
+      }
+      if (comment) {
+        order.set(OrderTable.Fields.ExecutorComment, comment);
+      }
+      order.set(OrderTable.Fields.Status, OrderStatus.AwaitingCompletionReview);
+      order.set(OrderTable.Fields.SubmittedAt, new Date());
+      const updated = await order.save();
+
+      const revision = new Parse.Object(OrderRevisionTable.TableName);
+      revision.set(OrderRevisionTable.Fields.OrderId, orderId);
+      revision.set(OrderRevisionTable.Fields.RevisionNumber, 1);
+      revision.set(OrderRevisionTable.Fields.FromStatus, OrderStatus.RevisionRequired);
+      revision.set(OrderRevisionTable.Fields.ToStatus, OrderStatus.AwaitingCompletionReview);
+      revision.set(OrderRevisionTable.Fields.Description, comment ?? '');
+      revision.set(OrderRevisionTable.Fields.CreatedBy, executorId);
+      revision.set(OrderRevisionTable.Fields.CreatedByRole, 'executor');
+      revision.set(OrderRevisionTable.Fields.CreatedAt, new Date());
+      revision.set(OrderRevisionTable.Fields.ResolvedAt, new Date());
+      if (comment) revision.set(OrderRevisionTable.Fields.ExecutorComment, comment);
+      await revision.save();
+
+      return this.mapOrderFields(updated);
+    } catch (error) {
+      throw new BadRequestException(`Помилка повторної здачі: ${(error as Error).message}`);
+    }
+  }
+
+  async approveCompletion(orderId: string, adminId: string) {
+    const query = new Parse.Query(this.orderClassName);
+    try {
+      const order = await query.get(orderId);
+      const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+      if (currentStatus !== OrderStatus.AwaitingCompletionReview) {
+        throw new BadRequestException('Замовлення не очікує на перевірку');
+      }
+      order.set(OrderTable.Fields.Status, OrderStatus.Done);
+      order.set(OrderTable.Fields.CompletedAt, new Date());
+      order.set(OrderTable.Fields.CompletedBy, adminId);
+      const updated = await order.save();
+      return this.mapOrderFields(updated);
+    } catch (error) {
+      throw new BadRequestException(`Помилка схвалення: ${(error as Error).message}`);
+    }
+  }
+
+  async sendClientReport(orderId: string) {
+    const order = await this.findById(orderId);
+    if (!order) {
+      throw new NotFoundException('Замовлення не знайдено');
+    }
+
+    const telegramId = order.client.telegramId;
+    const photosBefore = order.report.photosBefore ?? [];
+    const photosAfter = order.report.photosAfter ?? [];
+
+    const text = `🎉 <b>Вашу роботу № виконано!</b>
+
+` +
+      `📌 <b>Послуга:</b> ${order.service?.name ?? 'Не вказано'}
+` +
+      `📅 <b>Дата виконання:</b> ${new Date().toLocaleDateString('uk-UA')}
+` +
+      `💬 <b>Коментар виконавця:</b> ${order.executorComment ?? 'Немає коментаря'}
+
+` +
+      `Дякуємо, що обрали наш сервіс!`;
+
+    await this.clientBot.telegram.sendMessage(telegramId, text, { parse_mode: 'HTML' });
+
+    for (const url of photosBefore) {
+      try {
+        await this.clientBot.telegram.sendPhoto(telegramId, url);
+      } catch (e) {
+        console.error('Failed to send before photo:', e);
+      }
+    }
+
+    for (const url of photosAfter) {
+      try {
+        await this.clientBot.telegram.sendPhoto(telegramId, url);
+      } catch (e) {
+        console.error('Failed to send after photo:', e);
+      }
+    }
+
+    return order;
+  }
+
+  async findById(id: string) {
+    const query = new this.back4app.parse.Query(this.orderClassName);
+    query.include('service');
+    try {
+      const order = await query.get(id);
+      return this.mapOrderFields(order);
+    } catch {
+      return null;
     }
   }
 

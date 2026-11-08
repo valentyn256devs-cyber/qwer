@@ -12,6 +12,7 @@ import { ServiceChecklistScene } from './scenes/service-checklist.scene';
 import { FinalSelfcheckScene } from './scenes/final-selfcheck.scene';
 import { AfterPhotosScene } from './scenes/after-photos.scene';
 import { SubmitScene } from './scenes/submit.scene';
+import { RevisionScene } from './scenes/revision.scene';
 
 @Module({
   imports: [OrdersModule, ServicesModule, BurialsModule],
@@ -26,6 +27,7 @@ import { SubmitScene } from './scenes/submit.scene';
     FinalSelfcheckScene,
     AfterPhotosScene,
     SubmitScene,
+    RevisionScene,
   ],
 })
 export class TelegramExecutorModule {}

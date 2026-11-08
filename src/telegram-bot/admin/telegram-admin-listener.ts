@@ -101,5 +101,56 @@ export class TelegramAdminListener {
     }
   }
 
+  // 4. Обробка кнопки "Надіслати на ревізію"
+  @Action(/^admin_revision_(.+)$/)
+  async handleAdminRevision(@Ctx() ctx: Context) {
+    if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
+    const orderId = ctx.callbackQuery.data.replace('admin_revision_', '');
+
+    try {
+      const adminId = ctx.from?.id.toString() ?? '';
+      await this.ordersService.revisionRequired(orderId, adminId, 'Замовлення потребує ревізії');
+
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
+      const message = ctx.callbackQuery.message;
+      const text = `🔄 <b>Заявку №${orderId} НАДІСЛАНО НА РЕВІЗІЮ</b>`;
+
+      if (message && 'photo' in message && message.photo) {
+        await ctx.editMessageCaption(text, { parse_mode: 'HTML' });
+      } else {
+        await ctx.reply(text, { parse_mode: 'HTML' });
+      }
+    } catch (error) {
+      console.error(error);
+      await ctx.answerCbQuery('Помилка створення ревізії.');
+    }
+  }
+
+  // 5. Обробка кнопки "Схвалити"
+  @Action(/^admin_approve_(.+)$/)
+  async handleAdminApprove(@Ctx() ctx: Context) {
+    if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
+    const orderId = ctx.callbackQuery.data.replace('admin_approve_', '');
+
+    try {
+      const adminId = ctx.from?.id.toString() ?? '';
+      await this.ordersService.approveCompletion(orderId, adminId);
+      await this.ordersService.sendClientReport(orderId);
+
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
+      const message = ctx.callbackQuery.message;
+      const text = `✅ <b>Заявку №${orderId} СХВАЛЕНО</b>`;
+
+      if (message && 'photo' in message && message.photo) {
+        await ctx.editMessageCaption(text, { parse_mode: 'HTML' });
+      } else {
+        await ctx.reply(text, { parse_mode: 'HTML' });
+      }
+    } catch (error) {
+      console.error(error);
+      await ctx.answerCbQuery('Помилка схвалення.');
+    }
+  }
+
 }
 

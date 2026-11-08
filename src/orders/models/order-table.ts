@@ -31,6 +31,7 @@ export const OrderTable = {
     StartedAt: 'startedAt',
     SubmittedAt: 'submittedAt',
     CompletedAt: 'completedAt',
+    CompletedBy: 'completedBy',
     CanceledAt: 'canceledAt',
     CanceledBy: 'canceledBy',
     CancellationReason: 'cancellationReason',
