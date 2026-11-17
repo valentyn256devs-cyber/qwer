@@ -1,33 +1,25 @@
-import {
-  BadRequestException,
-  ForbiddenException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, } from '@nestjs/common';
 import { Back4appService } from '../back4app/back4app.service';
 import * as Parse from 'parse/node';
 import { OrderTable } from './models/order-table';
 import { OrderRevisionTable } from './models/order-revision-table';
 import { OrderAssignmentHistoryTable } from './models/order-assignment-history-table';
 import { OrderStatusHistoryTable } from './models/order-status-history-table';
+import { CancellationRequestStatus, CancellationRequestTable, } from './models/cancellation-request-table';
+import { ClarificationRequestTable, ClarificationStatus, } from './models/clarification-request-table';
 import {
-  CancellationRequestTable,
-  CancellationRequestStatus,
-} from './models/cancellation-request-table';
-import {
-  ClarificationRequestTable,
-  ClarificationStatus,
-} from './models/clarification-request-table';
-import {
-  OrderStatus,
-  UnassignReason,
   ExecutorInabilityReason,
   ExecutorInabilityReasonsRequiringComment,
+  OrderStatus,
+  UnassignReason,
 } from './models/order-status';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { InjectBot } from 'nestjs-telegraf';
 import { mainMenuButtons, TelegramBot } from '../telegram-bot/telegram-constants';
+import { ExecutorConst } from '../telegram-bot/executor/model/executor-const';
 import { Context, Telegraf } from 'telegraf';
+import { PerformersService } from '../performers/performers.service';
+import { BurialsService } from '../burials/burials.service';
 
 @Injectable()
 export class OrdersService {
@@ -45,13 +37,57 @@ export class OrdersService {
     notifyOnOverdue: true,
   };
 
+  /**
+   * In-memory tracking of order-notification messages sent to performers.
+   * Key: orderId → list of { telegramId, messageId } so we can delete
+   * the notification from each performer's chat once the order is taken.
+   */
+  private readonly orderNotifications = new Map<
+    string,
+    Array<{ telegramId: string; messageId: number }>
+  >();
+  /** Statuses where client can directly cancel (req 42) */
+  private readonly clientDirectCancelStatuses = new Set<OrderStatus>([
+    OrderStatus.New,
+    OrderStatus.AwaitingAdminReview,
+    OrderStatus.Confirmed,
+    OrderStatus.AvailableForExecutor,
+  ]);
+  /** Statuses where client must request cancellation (req 42) */
+  private readonly clientRequestCancelStatuses = new Set<OrderStatus>([
+    OrderStatus.Assigned,
+    OrderStatus.AwaitingClientConfirmation,
+    OrderStatus.InProgress,
+    OrderStatus.RevisionRequired,
+  ]);
+
   constructor(
     private back4app: Back4appService,
     @InjectBot(TelegramBot.ClientBot)
     private readonly clientBot: Telegraf<Context>,
     @InjectBot(TelegramBot.AdminBot)
     private readonly adminBot: Telegraf<Context>,
-  ) {}
+    @InjectBot(TelegramBot.ExecutorBot)
+    private readonly executorBot: Telegraf<Context>,
+    private readonly performersService: PerformersService,
+    private readonly burialsService: BurialsService,
+  ) {
+  }
+
+  /**
+   * Отримує Order за ID через find (бо action «get» заборонений CLP на Back4app).
+   * Кидає NotFoundException, якщо замовлення не існує.
+   */
+  private async getOrderObject(id: string): Promise<Parse.Object> {
+    const query = new this.back4app.parse.Query(this.orderClassName);
+    query.equalTo('objectId', id);
+    query.include('service');
+    const results = await query.find();
+    if (!results || results.length === 0) {
+      throw new NotFoundException(`Заявку з ID ${id} не знайдено`);
+    }
+    return results[0];
+  }
 
   async create(createOrderDto: CreateOrderDto) {
     const {
@@ -109,6 +145,7 @@ export class OrdersService {
 
     return this.mapOrderFields(savedOrder);
   }
+
   async findAll() {
     const query = new this.back4app.parse.Query(this.orderClassName);
     query.include('service');
@@ -127,10 +164,10 @@ export class OrdersService {
         createdAt: order.createdAt,
         service: service
           ? {
-              id: service.id,
-              name: service.get('name') as string,
-              price: service.get('price') as number,
-            }
+            id: service.id,
+            name: service.get('name') as string,
+            price: service.get('price') as number,
+          }
           : null,
       };
     });
@@ -152,8 +189,9 @@ export class OrdersService {
     meta?: { changedBy?: string; reason?: string; comment?: string },
   ) {
     const query = new this.back4app.parse.Query(this.orderClassName);
+    query.include('service');
     try {
-      const order = await query.get(id);
+      const order = await this.getOrderObject(id);
       const fromStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
       order.set(OrderTable.Fields.Status, status);
       const updatedOrder = await order.save();
@@ -182,7 +220,7 @@ export class OrdersService {
     const query = new Parse.Query(this.orderClassName);
 
     try {
-      const order = await query.get(id);
+      const order = await this.getOrderObject(id);
       const parseFiles: Parse.File[] = [];
 
       // Завантажуємо кожен файл у хмару Back4app
@@ -255,7 +293,99 @@ export class OrdersService {
       { parse_mode: 'HTML', reply_markup: mainMenuButtons }
     );
 
+    // Сповіщаємо всіх активних виконавців про нове підтверджене замовлення
+    await this.notifyPerformersAboutOrder(orderId, updatedOrder);
+
     return updatedOrder;
+  }
+
+  // ==================== Хелпери для форматування сповіщень ====================
+
+  /**
+   * Оновлює сповіщення про замовлення в чатах інших виконавців на «вже підтверджено»
+   * (прибирає кнопки), окрім того, хто підтвердив. Якщо редагування неможливе — видаляє.
+   * Викликається одразу після assignExecutor.
+   */
+  async notifyPerformersOrderTaken(orderId: string, takenByExecutorId: string) {
+    const notifications = this.orderNotifications.get(orderId);
+    if (!notifications || notifications.length === 0) return;
+
+    for (const { telegramId, messageId } of notifications) {
+      // Не чіпаємо того, хто підтвердив замовлення
+      if (telegramId === takenByExecutorId) continue;
+      try {
+        await this.executorBot.telegram.editMessageText(
+          telegramId,
+          messageId,
+          undefined,
+          ExecutorConst.NewOrderTakenByOther(orderId),
+          { parse_mode: 'HTML' },
+        );
+      } catch {
+        // Якщо редагування не вдалося — видаляємо повідомлення
+        try {
+          await this.executorBot.telegram.deleteMessage(telegramId, messageId);
+        } catch {
+          // ignore — повідомлення вже видалено або бот не має прав
+        }
+      }
+    }
+
+    this.orderNotifications.delete(orderId);
+  }
+
+  /**
+   * Надсилає замовнику (клієнту) коротке текстове повідомлення,
+   * що його замовлення прийнято виконавцем. Без додаткових даних.
+   */
+  private async notifyClientOrderTaken(
+    clientTelegramId: string,
+    orderId: string,
+  ): Promise<void> {
+    try {
+      await this.clientBot.telegram.sendMessage(
+        clientTelegramId,
+        ExecutorConst.ClientOrderTaken(orderId),
+      );
+    } catch (error) {
+      console.error(
+        `Не вдалося надіслати сповіщення замовнику ${clientTelegramId}:`,
+        error,
+      );
+    }
+  }
+
+  /**
+   * Сповіщає адміністратора, що виконавець підтвердив замовлення.
+   * Надсилає ФІО, телефон виконавця та номер замовлення.
+   */
+  async notifyAdminAboutExecutorConfirm(orderId: string, executorTelegramId: string) {
+    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
+    if (!adminChatId) return;
+
+    let performer: any = null;
+    try {
+      performer = await this.performersService.findByTelegramId(executorTelegramId);
+    } catch {
+      performer = null;
+    }
+
+    const fullName =
+      performer?.firstName || performer?.lastName
+        ? `${performer.lastName ?? ''} ${performer.firstName ?? ''}`.trim()
+        : '';
+    const phone = performer?.phoneNumber ?? '';
+
+    const text =
+      `✅ <b>Виконавець підтвердив замовлення №${orderId}</b>\n\n` +
+      `👤 <b>Виконавець:</b> ${this.escapeHtml(fullName) || '—'}\n` +
+      `📞 <b>Телефон:</b> ${this.escapeHtml(phone) || '—'}`;
+
+    try {
+      await this.adminBot.telegram.sendMessage(adminChatId, text, { parse_mode: 'HTML' });
+    } catch (error) {
+      console.error('Не вдалося надіслати повідомлення адміністратору:', error);
+    }
   }
 
   /**
@@ -315,7 +445,7 @@ export class OrdersService {
   async startExecution(orderId: string, executorId: string) {
     const query = new Parse.Query(this.orderClassName);
     try {
-      const order = await query.get(orderId);
+      const order = await this.getOrderObject(orderId);
       const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
       const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
       if (currentStatus !== OrderStatus.Assigned || currentExecutor !== executorId) {
@@ -333,7 +463,7 @@ export class OrdersService {
   async submitForReview(orderId: string, executorId: string, comment?: string) {
     const query = new Parse.Query(this.orderClassName);
     try {
-      const order = await query.get(orderId);
+      const order = await this.getOrderObject(orderId);
       const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
       const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
       if (currentStatus !== OrderStatus.InProgress || currentExecutor !== executorId) {
@@ -354,10 +484,15 @@ export class OrdersService {
   async assignExecutor(orderId: string, executorId: string, assignedBy: string) {
     const query = new Parse.Query(this.orderClassName);
     try {
-      const order = await query.get(orderId);
+      const order = await this.getOrderObject(orderId);
       const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
       const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
-      if (currentStatus !== OrderStatus.AvailableForExecutor || currentExecutor) {
+      // Дозволяємо взяти замовлення як з «Доступно для виконавця»,
+      // так і щойно підтверджене адміном («Підтверджено») — через кнопку «Підтвердити».
+      const canAssign =
+        currentStatus === OrderStatus.AvailableForExecutor ||
+        currentStatus === OrderStatus.Confirmed;
+      if (!canAssign || currentExecutor) {
         throw new BadRequestException('Замовлення вже прийняте іншим виконавцем');
       }
       order.set(OrderTable.Fields.AssignedExecutorId, executorId);
@@ -366,6 +501,19 @@ export class OrdersService {
       order.set(OrderTable.Fields.Status, OrderStatus.Assigned);
       const updated = await order.save();
       await this.recordAssignmentHistory({ orderId, executorId, assignedBy });
+
+      // Видаляємо сповіщення про це замовлення з чатів інших виконавців
+      await this.notifyPerformersOrderTaken(orderId, executorId);
+
+      // Сповіщаємо замовника (клієнта), що його замовлення прийнято виконавцем
+      const clientTelegramId = order.get(OrderTable.Fields.TelegramId) as
+        | string
+        | null
+        | undefined;
+      if (clientTelegramId) {
+        await this.notifyClientOrderTaken(clientTelegramId, orderId);
+      }
+
       return this.mapOrderFields(updated);
     } catch (error) {
       throw new BadRequestException(`Помилка призначення: ${(error as Error).message}`);
@@ -379,7 +527,7 @@ export class OrdersService {
   async unassignExecutor(orderId: string, adminId: string, reason: UnassignReason, comment?: string) {
     const query = new Parse.Query(this.orderClassName);
     try {
-      const order = await query.get(orderId);
+      const order = await this.getOrderObject(orderId);
       const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
       if (!currentExecutor) {
         throw new BadRequestException('На замовленні немає призначеного виконавця');
@@ -411,7 +559,7 @@ export class OrdersService {
   async changeExecutor(orderId: string, newExecutorId: string, adminId: string, reason?: string) {
     const query = new Parse.Query(this.orderClassName);
     try {
-      const order = await query.get(orderId);
+      const order = await this.getOrderObject(orderId);
       const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
       if (!currentExecutor) {
         throw new BadRequestException('На замовленні немає призначеного виконавця для заміни');
@@ -429,7 +577,12 @@ export class OrdersService {
       order.set(OrderTable.Fields.AssignedBy, adminId);
       order.set(OrderTable.Fields.AssignedAt, new Date());
       const updated = await order.save();
-      await this.recordAssignmentHistory({ orderId, executorId: newExecutorId, assignedBy: adminId, reason: 'change_executor' });
+      await this.recordAssignmentHistory({
+        orderId,
+        executorId: newExecutorId,
+        assignedBy: adminId,
+        reason: 'change_executor'
+      });
       return this.mapOrderFields(updated);
     } catch (error) {
       if (error instanceof BadRequestException) throw error;
@@ -445,7 +598,7 @@ export class OrdersService {
   async takeOverExecutor(orderId: string, adminId: string) {
     const query = new Parse.Query(this.orderClassName);
     try {
-      const order = await query.get(orderId);
+      const order = await this.getOrderObject(orderId);
       const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
       if (currentExecutor === adminId) {
         throw new BadRequestException('Ви вже є виконавцем цього замовлення');
@@ -475,7 +628,6 @@ export class OrdersService {
     }
   }
 
-
   async revisionRequired(
     orderId: string,
     adminId: string,
@@ -485,7 +637,7 @@ export class OrdersService {
   ) {
     const query = new Parse.Query(this.orderClassName);
     try {
-      const order = await query.get(orderId);
+      const order = await this.getOrderObject(orderId);
       const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
       if (currentStatus !== OrderStatus.AwaitingCompletionReview) {
         throw new BadRequestException('Замовлення не очікує на перевірку');
@@ -515,7 +667,7 @@ export class OrdersService {
   async resubmitForReview(orderId: string, executorId: string, comment?: string) {
     const query = new Parse.Query(this.orderClassName);
     try {
-      const order = await query.get(orderId);
+      const order = await this.getOrderObject(orderId);
       const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
       const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
       if (currentStatus !== OrderStatus.RevisionRequired || currentExecutor !== executorId) {
@@ -550,7 +702,7 @@ export class OrdersService {
   async approveCompletion(orderId: string, adminId: string) {
     const query = new Parse.Query(this.orderClassName);
     try {
-      const order = await query.get(orderId);
+      const order = await this.getOrderObject(orderId);
       const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
       if (currentStatus !== OrderStatus.AwaitingCompletionReview) {
         throw new BadRequestException('Замовлення не очікує на перевірку');
@@ -612,14 +764,12 @@ export class OrdersService {
     const query = new this.back4app.parse.Query(this.orderClassName);
     query.include('service');
     try {
-      const order = await query.get(id);
+      const order = await this.getOrderObject(id);
       return this.mapOrderFields(order);
     } catch {
       return null;
     }
   }
-
-  // ==================== Req 38-39: Deadline & Overdue helpers ====================
 
   /** Req 39: Overdue is not a separate status */
   isOverdue(order: { status: OrderStatus; deadlines?: { executionDeadline?: Date | string | null } }): boolean {
@@ -656,93 +806,11 @@ export class OrdersService {
     return dl.toLocaleString('uk-UA', { dateStyle: 'short', timeStyle: 'short' });
   }
 
-  // ==================== Req 36: Assignment History ====================
-
-  private async recordAssignmentHistory(params: {
-    orderId: string;
-    executorId: string;
-    assignedBy: string;
-    reason?: string;
-    comment?: string;
-  }): Promise<void> {
-    const history = new Parse.Object(this.assignmentHistoryClassName);
-    history.set(OrderAssignmentHistoryTable.Fields.OrderId, params.orderId);
-    history.set(OrderAssignmentHistoryTable.Fields.ExecutorId, params.executorId);
-    history.set(OrderAssignmentHistoryTable.Fields.AssignedAt, new Date());
-    history.set(OrderAssignmentHistoryTable.Fields.AssignedBy, params.assignedBy);
-    if (params.reason) history.set(OrderAssignmentHistoryTable.Fields.Reason, params.reason);
-    if (params.comment) history.set(OrderAssignmentHistoryTable.Fields.Comment, params.comment);
-    await history.save();
-  }
-
-  private async closeLatestAssignmentHistory(params: {
-    orderId: string;
-    executorId: string;
-    unassignedBy: string;
-    reason: string;
-    comment?: string;
-  }): Promise<void> {
-    const query = new Parse.Query(this.assignmentHistoryClassName);
-    query.equalTo(OrderAssignmentHistoryTable.Fields.OrderId, params.orderId);
-    query.equalTo(OrderAssignmentHistoryTable.Fields.ExecutorId, params.executorId);
-    query.doesNotExist(OrderAssignmentHistoryTable.Fields.UnassignedAt);
-    query.descending(OrderAssignmentHistoryTable.Fields.AssignedAt);
-    query.limit(1);
-    const record = await query.first();
-    if (record) {
-      record.set(OrderAssignmentHistoryTable.Fields.UnassignedAt, new Date());
-      record.set(OrderAssignmentHistoryTable.Fields.UnassignedBy, params.unassignedBy);
-      record.set(OrderAssignmentHistoryTable.Fields.Reason, params.reason);
-      if (params.comment) record.set(OrderAssignmentHistoryTable.Fields.Comment, params.comment);
-      await record.save();
-    }
-  }
-
-  // ==================== Req 49: Order Status History ====================
-  private async recordStatusHistory(params: {
-    orderId: string;
-    fromStatus: OrderStatus | string | null;
-    toStatus: OrderStatus | string;
-    changedBy: string;
-    reason?: string;
-    comment?: string;
-  }): Promise<void> {
-    try {
-      const rec = new Parse.Object(this.statusHistoryClassName);
-      rec.set(OrderStatusHistoryTable.Fields.OrderId, params.orderId);
-      rec.set(OrderStatusHistoryTable.Fields.FromStatus, params.fromStatus ?? 'none');
-      rec.set(OrderStatusHistoryTable.Fields.ToStatus, params.toStatus);
-      rec.set(OrderStatusHistoryTable.Fields.ChangedBy, params.changedBy);
-      rec.set(OrderStatusHistoryTable.Fields.ChangedAt, new Date());
-      if (params.reason) rec.set(OrderStatusHistoryTable.Fields.Reason, params.reason);
-      if (params.comment) rec.set(OrderStatusHistoryTable.Fields.Comment, params.comment);
-      await rec.save();
-    } catch (e) {
-      console.error('Failed to record status history:', e);
-    }
-  }
-
-  // ==================== Req 41-47: Cancellation ====================
-
-  /** Statuses where client can directly cancel (req 42) */
-  private readonly clientDirectCancelStatuses = new Set<OrderStatus>([
-    OrderStatus.New,
-    OrderStatus.AwaitingAdminReview,
-    OrderStatus.Confirmed,
-    OrderStatus.AvailableForExecutor,
-  ]);
-
-  /** Statuses where client must request cancellation (req 42) */
-  private readonly clientRequestCancelStatuses = new Set<OrderStatus>([
-    OrderStatus.Assigned,
-    OrderStatus.AwaitingClientConfirmation,
-    OrderStatus.InProgress,
-    OrderStatus.RevisionRequired,
-  ]);
+  // ==================== Req 38-39: Deadline & Overdue helpers ====================
 
   async clientCancelOrder(orderId: string, telegramId: string, reason?: string, comment?: string) {
     const query = new Parse.Query(this.orderClassName);
-    const order = await query.get(orderId);
+    const order = await this.getOrderObject(orderId);
     const status = order.get(OrderTable.Fields.Status) as OrderStatus;
     const ownerTg = order.get(OrderTable.Fields.TelegramId) as string;
     if (ownerTg !== telegramId) throw new ForbiddenException('Це не ваше замовлення');
@@ -760,7 +828,7 @@ export class OrdersService {
   async createCancellationRequest(orderId: string, requestedBy: string, reason: string, comment?: string) {
     if (!reason?.trim()) throw new BadRequestException('Причина скасування обовʼязкова');
     const query = new Parse.Query(this.orderClassName);
-    const order = await query.get(orderId);
+    const order = await this.getOrderObject(orderId);
     const status = order.get(OrderTable.Fields.Status) as OrderStatus;
     if (status === OrderStatus.Done || status === OrderStatus.Canceled) {
       throw new BadRequestException('Замовлення вже завершене або скасоване');
@@ -790,7 +858,7 @@ export class OrdersService {
       throw new BadRequestException('Для обраної причини коментар обовʼязковий');
     }
     const query = new Parse.Query(this.orderClassName);
-    const order = await query.get(orderId);
+    const order = await this.getOrderObject(orderId);
     const status = order.get(OrderTable.Fields.Status) as OrderStatus;
     const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
     if (currentExecutor !== executorId) throw new ForbiddenException('Ви не є виконавцем цього замовлення');
@@ -823,6 +891,8 @@ export class OrdersService {
     return this.mapOrderFields(order);
   }
 
+  // ==================== Req 36: Assignment History ====================
+
   /** Req 44,46: Admin cancels order with audit */
   async adminCancelOrder(
     orderId: string,
@@ -833,7 +903,7 @@ export class OrdersService {
   ) {
     if (!reason?.trim()) throw new BadRequestException('Причина скасування обовʼязкова');
     const query = new Parse.Query(this.orderClassName);
-    const order = await query.get(orderId);
+    const order = await this.getOrderObject(orderId);
     const status = order.get(OrderTable.Fields.Status) as OrderStatus;
     if (status === OrderStatus.Done) throw new BadRequestException('Виконане замовлення не можна скасувати');
     if (status === OrderStatus.Canceled) throw new BadRequestException('Замовлення вже скасоване');
@@ -849,14 +919,18 @@ export class OrdersService {
     decisionComment?: string,
   ) {
     const reqQuery = new Parse.Query(this.cancellationRequestClassName);
-    const req = await reqQuery.get(requestId);
+    reqQuery.equalTo('objectId', requestId);
+    const reqResults = await reqQuery.find();
+    if (!reqResults || reqResults.length === 0) {
+      throw new NotFoundException(`Запит на скасування з ID ${requestId} не знайдено`);
+    }
+    const req = reqResults[0];
     const reqStatus = req.get(CancellationRequestTable.Fields.Status) as CancellationRequestStatus;
     if (reqStatus !== CancellationRequestStatus.Pending) {
       throw new BadRequestException('Запит вже розглянуто');
     }
     const orderId = req.get(CancellationRequestTable.Fields.OrderId) as string;
-    const orderQuery = new Parse.Query(this.orderClassName);
-    const order = await orderQuery.get(orderId);
+    const order = await this.getOrderObject(orderId);
     const prevStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
 
     req.set(CancellationRequestTable.Fields.ReviewedBy, adminId);
@@ -935,6 +1009,212 @@ export class OrdersService {
     return { ok: true };
   }
 
+  // ==================== Req 41-47: Cancellation ====================
+
+  /**
+   * Надсилає сповіщення всім активним виконавцям про нове замовлення.
+   * Повідомлення містить повні деталі (послуга, місце, покійний, роки життя, коментар)
+   * та кнопки «Підтвердити» / «Відказуюсь».
+   * Message ID зберігається для подальшого оновлення/видалення, коли замовлення хтось візьме.
+   */
+  private async notifyPerformersAboutOrder(orderId: string, order: any) {
+    let performers;
+    try {
+      performers = await this.performersService.findAllActive();
+    } catch (error) {
+      console.error('Не вдалося завантажити список виконавців:', error);
+      return;
+    }
+
+    if (!performers || performers.length === 0) return;
+
+    // Дані місця поховання (memory place): кладовище, сектор, GPS, ПІБ, роки життя
+    const burialId = order?.details?.burialId as string | undefined;
+    let burial: any = undefined;
+    if (burialId) {
+      try {
+        burial = await this.burialsService.findBurialById(burialId);
+      } catch {
+        burial = undefined;
+      }
+    }
+
+    const serviceName = order?.service?.name ?? ExecutorConst.NewOrderDash;
+    const additionalServices = this.formatAdditionalServices(order?.additionalServices);
+    const clientComment = order?.clientComment?.trim()
+      ? this.escapeHtml(order.clientComment.trim())
+      : ExecutorConst.NewOrderNoComment;
+    const serviceDate = this.formatDate(order?.deadlines?.serviceDateFrom);
+    const deadline =
+      order?.deadlineDisplay?.executionDeadline ?? ExecutorConst.NewOrderDash;
+
+    const fullName = burial
+      ? `${burial.burialLastName ?? ''} ${burial.burialName ?? ''} ${burial.burialFatherName ?? ''}`.trim()
+      : '';
+    const lifeYears = this.formatLifeYears(burial?.birthDate, burial?.deathDate);
+
+    const text =
+      `${ExecutorConst.NewOrderTitle(orderId)}\n\n` +
+      `${ExecutorConst.NewOrderServiceLabel} <b>${this.escapeHtml(serviceName)}</b>\n` +
+      `${ExecutorConst.NewOrderAdditionalServicesLabel} ${additionalServices}\n` +
+      `${ExecutorConst.NewOrderDateLabel} ${serviceDate}\n` +
+      `${ExecutorConst.NewOrderDeadlineLabel} ${this.escapeHtml(deadline)}\n\n` +
+      `${ExecutorConst.NewOrderDeceasedLabel} ${this.escapeHtml(fullName) || ExecutorConst.NewOrderDash}\n` +
+      `${ExecutorConst.NewOrderLifeYearsLabel} ${lifeYears}\n\n` +
+      `${ExecutorConst.NewOrderPlaceLabel}\n` +
+      `${ExecutorConst.NewOrderCemeteryLabel} ${this.escapeHtml(burial?.cemetery) || ExecutorConst.NewOrderDash}\n` +
+      `${ExecutorConst.NewOrderSectorLabel} ${this.escapeHtml(burial?.notes) || ExecutorConst.NewOrderDash}\n` +
+      `${ExecutorConst.NewOrderGpsLabel} ${this.escapeHtml(burial?.coordinates) || ExecutorConst.NewOrderDash}\n\n` +
+      `${ExecutorConst.NewOrderCommentLabel} ${clientComment}`;
+
+    const notifications: Array<{ telegramId: string; messageId: number }> = [];
+
+    for (const performer of performers) {
+      if (!performer.telegramId) continue;
+      try {
+        const message = await this.executorBot.telegram.sendMessage(
+          performer.telegramId,
+          text,
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text: ExecutorConst.NewOrderConfirmButton,
+                    callback_data: `executor_confirm_order_${orderId}`,
+                  },
+                  {
+                    text: ExecutorConst.NewOrderDeclineButton,
+                    callback_data: `executor_decline_order_${orderId}`,
+                  },
+                ],
+              ],
+            },
+          },
+        );
+        notifications.push({
+          telegramId: performer.telegramId,
+          messageId: message.message_id,
+        });
+      } catch (error) {
+        console.error(
+          `Не вдалося надіслати сповіщення виконавцю ${performer.telegramId}:`,
+          error,
+        );
+      }
+    }
+
+    if (notifications.length > 0) {
+      this.orderNotifications.set(orderId, notifications);
+    }
+  }
+
+  /** Екранує HTML-спецсимволи, щоб динамічний контент не ламав розмітку Telegram */
+  private escapeHtml(value?: string | null): string {
+    if (value == null) return '';
+    return String(value)
+      .replace(/&/g, '&')
+      .replace(/</g, '<')
+      .replace(/>/g, '>');
+  }
+
+  /** Форматує дату у uk-UA або повертає «—» */
+  private formatDate(value?: Date | string | null): string {
+    if (!value) return ExecutorConst.NewOrderDash;
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return ExecutorConst.NewOrderDash;
+    return date.toLocaleDateString('uk-UA');
+  }
+
+  /** Форматує роки життя (дата народження — дата смерті) */
+  private formatLifeYears(
+    birth?: string | Date | null,
+    death?: string | Date | null,
+  ): string {
+    const b = birth ? new Date(birth) : null;
+    const d = death ? new Date(death) : null;
+    const bOk = !!b && !Number.isNaN(b.getTime());
+    const dOk = !!d && !Number.isNaN(d.getTime());
+    if (bOk && dOk) {
+      return `${b!.toLocaleDateString('uk-UA')} — ${d!.toLocaleDateString('uk-UA')}`;
+    }
+    if (dOk) return `— ${d!.toLocaleDateString('uk-UA')}`;
+    if (bOk) return `${b!.toLocaleDateString('uk-UA')} —`;
+    return ExecutorConst.NewOrderDash;
+  }
+
+  /** Форматує список додаткових послуг у рядок */
+  private formatAdditionalServices(services?: string[]): string {
+    const list = (services ?? []).map((s) => String(s).trim()).filter(Boolean);
+    if (list.length === 0) return ExecutorConst.NewOrderNoAdditionalServices;
+    return list.map((s) => this.escapeHtml(s)).join(', ');
+  }
+
+  private async recordAssignmentHistory(params: {
+    orderId: string;
+    executorId: string;
+    assignedBy: string;
+    reason?: string;
+    comment?: string;
+  }): Promise<void> {
+    const history = new Parse.Object(this.assignmentHistoryClassName);
+    history.set(OrderAssignmentHistoryTable.Fields.OrderId, params.orderId);
+    history.set(OrderAssignmentHistoryTable.Fields.ExecutorId, params.executorId);
+    history.set(OrderAssignmentHistoryTable.Fields.AssignedAt, new Date());
+    history.set(OrderAssignmentHistoryTable.Fields.AssignedBy, params.assignedBy);
+    if (params.reason) history.set(OrderAssignmentHistoryTable.Fields.Reason, params.reason);
+    if (params.comment) history.set(OrderAssignmentHistoryTable.Fields.Comment, params.comment);
+    await history.save();
+  }
+
+  private async closeLatestAssignmentHistory(params: {
+    orderId: string;
+    executorId: string;
+    unassignedBy: string;
+    reason: string;
+    comment?: string;
+  }): Promise<void> {
+    const query = new Parse.Query(this.assignmentHistoryClassName);
+    query.equalTo(OrderAssignmentHistoryTable.Fields.OrderId, params.orderId);
+    query.equalTo(OrderAssignmentHistoryTable.Fields.ExecutorId, params.executorId);
+    query.doesNotExist(OrderAssignmentHistoryTable.Fields.UnassignedAt);
+    query.descending(OrderAssignmentHistoryTable.Fields.AssignedAt);
+    query.limit(1);
+    const record = await query.first();
+    if (record) {
+      record.set(OrderAssignmentHistoryTable.Fields.UnassignedAt, new Date());
+      record.set(OrderAssignmentHistoryTable.Fields.UnassignedBy, params.unassignedBy);
+      record.set(OrderAssignmentHistoryTable.Fields.Reason, params.reason);
+      if (params.comment) record.set(OrderAssignmentHistoryTable.Fields.Comment, params.comment);
+      await record.save();
+    }
+  }
+
+  // ==================== Req 49: Order Status History ====================
+  private async recordStatusHistory(params: {
+    orderId: string;
+    fromStatus: OrderStatus | string | null;
+    toStatus: OrderStatus | string;
+    changedBy: string;
+    reason?: string;
+    comment?: string;
+  }): Promise<void> {
+    try {
+      const rec = new Parse.Object(this.statusHistoryClassName);
+      rec.set(OrderStatusHistoryTable.Fields.OrderId, params.orderId);
+      rec.set(OrderStatusHistoryTable.Fields.FromStatus, params.fromStatus ?? 'none');
+      rec.set(OrderStatusHistoryTable.Fields.ToStatus, params.toStatus);
+      rec.set(OrderStatusHistoryTable.Fields.ChangedBy, params.changedBy);
+      rec.set(OrderStatusHistoryTable.Fields.ChangedAt, new Date());
+      if (params.reason) rec.set(OrderStatusHistoryTable.Fields.Reason, params.reason);
+      if (params.comment) rec.set(OrderStatusHistoryTable.Fields.Comment, params.comment);
+      await rec.save();
+    } catch (e) {
+      console.error('Failed to record status history:', e);
+    }
+  }
+
   private async applyCancellation(
     order: Parse.Object,
     canceledBy: string,
@@ -1000,10 +1280,10 @@ export class OrdersService {
       },
       service: service
         ? {
-            id: service.id,
-            name: service.get('name') as string,
-            price: service.get('price') as number,
-          }
+          id: service.id,
+          name: service.get('name') as string,
+          price: service.get('price') as number,
+        }
         : null,
       details: {
         burialId: order.get(OrderTable.Fields.BurialId) as string,

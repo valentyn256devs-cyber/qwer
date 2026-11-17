@@ -7,9 +7,10 @@ import {CreateOrderScene} from '../telegram-bot/client/scenes/create-order.scene
 import {CreateBurialScene} from "../telegram-bot/client/scenes/create-burial.scene";
 import {BurialsModule} from "../burials/burials.module";
 import {EditBurialScene} from "../telegram-bot/client/scenes/edit-burial.scene";
+import {PerformersModule} from "../performers/performers.module";
 
 @Module({
-  imports: [ServicesModule, BurialsModule],
+  imports: [ServicesModule, BurialsModule, PerformersModule],
   controllers: [OrdersController],
   providers: [
     OrdersService,

@@ -2,7 +2,7 @@ import { Ctx, Wizard, WizardStep } from 'nestjs-telegraf';
 import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
 import { Scene as SceneConst } from '../../telegram-constants';
-import { ExecutorConst } from '../executor-const';
+import { ExecutorConst } from '../model/executor-const';
 import type { ExecutorWizardContext } from '../interfaces/executor-wizard-context.interface';
 
 export interface PhotoSlot {

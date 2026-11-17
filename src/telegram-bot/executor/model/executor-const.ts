@@ -1,5 +1,5 @@
 export const ExecutorConst = {
-  OpenOrdersLoading: '📋 Відкриті замовлення (AvailableForExecutor). Завантаження...',
+  OpenOrdersLoading: '📋 Відкриті замовлення. Завантаження...',
   OpenOrdersEmpty: 'Наразі немає відкритих замовлень.',
   OpenOrdersError: '❌ Не вдалося завантажити відкриті замовлення.',
   OpenOrdersFooter: '⬇️ Оберіть дію для обраного замовлення:',
@@ -74,6 +74,7 @@ export const ExecutorConst = {
     'ℹ️ На цьому етапі замовлення не потребує дій з вашого боку. Перегляньте деталі та очікуйте оновлень.',
   MyOrdersNoAdditionalServices: '—',
   MyOrdersNoClientComment: '—',
+  MyOrdersStartError: (message: string) => `❌ ${message}`,
 
   // ==================== Req: «Виконані замовлення» (DONE_ORDERS_SCENE) ====================
   DoneOrdersLoading: '✅ <b>Виконані замовлення</b>\n\nЗавантаження...',
@@ -90,4 +91,94 @@ export const ExecutorConst = {
   DoneOrdersCancelButton: '✖️ Скасувати перегляд',
   DoneOrdersDetailsTitle: (id: string) => `📄 <b>Виконане замовлення №${id}</b>`,
   DoneOrdersCompletedLabel: '✅ <b>Завершено:</b>',
+
+  // ==================== Загальні кнопки / повідомлення ====================
+  CancelButton: '↩️ Скасувати',
+  SendButton: '✅ Надіслати',
+  SkipPhotosButton: '⏭ Надіслати без фото',
+  SendErrorMessage: 'Не вдалося надіслати повідомлення.',
+  PlaceholderActionHint: 'Ця дія буде реалізована найближчим часом.',
+
+  // ==================== Req 43: Не можу виконати ====================
+  CannotCompleteTitle: '❌ <b>Не можу виконати замовлення</b>\n\nОберіть причину:',
+  CannotCompletePickHint:
+    'Будь ласка, відкрийте замовлення з розділу «Мої замовлення» та натисніть «Не можу виконати замовлення».',
+  InabilityCommentPrompt: '✍️ Будь ласка, додайте коментар (обовʼязково для обраної причини):',
+  InabilitySentSuccess:
+    '✅ <b>Повідомлення надіслано адміністратору.</b>\nЗамовлення повернуто у відкриті для перепризначення.',
+
+  // ==================== Req 48: Повідомити про проблему ====================
+  ReportProblemPickHint:
+    'Відкрийте замовлення з розділу «Мої замовлення» та натисніть «Повідомити про проблему».',
+  ReportProblemTitle: '🆘 <b>Повідомити про проблему</b>\n\nОберіть причину:',
+  ProblemCommentPrompt:
+    '✍️ Опишіть проблему (коментар). Після коментаря ви зможете додати фото (необовʼязково) або натиснути «Надіслати».',
+  ProblemPhotosPrompt:
+    '📷 Надішліть фото (необовʼязково) або натисніть «Надіслати без фото». Коли закінчите — натисніть «Надіслати».',
+  ProblemPhotoAdded: (count: number) =>
+    `📷 Фото додано (${count}). Надішліть ще або натисніть «Надіслати».`,
+  ProblemSentSuccess:
+    '✅ Повідомлення про проблему надіслано адміністратору. Статус замовлення не змінено.',
+  NoActiveProblemReport: 'Немає активного звіту про проблему.',
+
+  // ==================== Картка деталей замовлення (executor-order-view) ====================
+  OrderDetailsOverdue: '🔴 <b>ПРОСТРОЧЕНО</b>',
+  OrderDetailsServiceLabel: '📌 <b>Послуга:</b>',
+  OrderDetailsAdditionalServicesLabel: '➕ <b>Додаткові послуги:</b>',
+  OrderDetailsDateLabel: '📅 <b>Дата виконання:</b>',
+  OrderDetailsDeadlineLabel: '⏰ <b>Виконати до:</b>',
+  OrderDetailsStatusLabel: '📊 <b>Статус:</b>',
+  OrderDetailsClientCommentLabel: '💬 <b>Коментар клієнта:</b>',
+  OrderDetailsClientLabel: '👤 <b>Клієнт:</b>',
+  OrderDetailsClientNameLabel: '  • Ім\'я:',
+  OrderDetailsClientPhoneLabel: '  • Телефон:',
+  OrderDetailsLocationLabel: '📍 <b>Місце виконання:</b>',
+  OrderDetailsCemeteryLabel: '  • Кладовище:',
+  OrderDetailsSectorLabel: '  • Сектор / ряд / номер:',
+  OrderDetailsGpsLabel: '  • GPS:',
+  OrderDetailsFullNameLabel: '  • ПІБ:',
+  OrderListButtonFormat: (id: string, service: string, status: string) =>
+    `№${id} · ${service} · ${status}`,
+  OrderListButtonFormatShort: (id: string, service: string) => `№${id} · ${service}`,
+  OrderDetailsRemaining: (remaining: string) => ` (залишилось: ${remaining})`,
+
+  // ==================== Картка відкритого замовлення (open-orders.scene) ====================
+  OpenOrdersCardTitle: (id: string) => `📌 <b>Замовлення №${id}</b>`,
+  OpenOrdersCardServiceLabel: '🏷 Послуга:',
+  OpenOrdersCardAddressLabel: '📍 Адреса / кладовище:',
+  OpenOrdersCardDateLabel: '📅 Бажана дата:',
+  OpenOrdersCardDeadlineLabel: '⏰ Виконати до:',
+  OpenOrdersCardRemainingLabel: '⏱ Залишилось:',
+  OpenOrdersCardCommentLabel: '📝 Коментар:',
+  OpenOrdersCardAddressHint: 'див. картку',
+  OpenOrdersCardDash: '—',
+
+  // ==================== Сповіщення виконавцю про нове замовлення ====================
+  NewOrderTitle: (id: string) => `🆕 <b>Нове замовлення №${id}</b>`,
+  NewOrderServiceLabel: '📌 <b>Послуга:</b>',
+  NewOrderAdditionalServicesLabel: '➕ <b>Додаткові послуги:</b>',
+  NewOrderDateLabel: '📅 <b>Дата виконання:</b>',
+  NewOrderDeadlineLabel: '⏰ <b>Виконати до:</b>',
+  NewOrderDeceasedLabel: '⚰️ <b>Покійний:</b>',
+  NewOrderLifeYearsLabel: '🎂 <b>Роки життя:</b>',
+  NewOrderPlaceLabel: '📍 <b>Місце виконання:</b>',
+  NewOrderCemeteryLabel: '  • Кладовище:',
+  NewOrderSectorLabel: '  • Сектор / ряд / номер:',
+  NewOrderGpsLabel: '  • GPS:',
+  NewOrderCommentLabel: '💬 <b>Коментар клієнта:</b>',
+  NewOrderConfirmButton: '✅ Підтвердити',
+  NewOrderDeclineButton: '🚫 Відказуюсь',
+  NewOrderDash: '—',
+  NewOrderNoAdditionalServices: '—',
+  NewOrderNoComment: '—',
+  NewOrderConfirmedByMe: (id: string) =>
+    `✅ <b>Ви підтвердили замовлення №${id}</b>\n\nВоно з’явилося у розділі «Мої замовлення».`,
+  NewOrderDeclinedByMe: (id: string) =>
+    `🚫 <b>Ви відказалися від замовлення №${id}</b>`,
+  NewOrderTakenByOther: (id: string) =>
+    `🔒 <b>Замовлення №${id} вже підтверджено іншим виконавцем</b>`,
+  NewOrderConfirmError: '❌ Не вдалося підтвердити замовлення. Спробуйте пізніше.',
+  NewOrderAlreadyTaken: '❌ <b>Замовлення вже підтверджено іншим виконавцем.</b>',
+  // Сповіщення замовнику (клієнту) — лише текст, без додаткових даних
+  ClientOrderTaken: (orderId: string) => `✅ Ваше замовлення (№${orderId}) прийнято виконавцем.`,
 };

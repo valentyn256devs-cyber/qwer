@@ -1,7 +1,22 @@
 import { Markup } from 'telegraf';
-import { OrderStatus } from '../../orders/models/order-status';
-import { getOrderStatusDescription } from '../telegram-constants';
+import { OrderStatus } from '../../../orders/models/order-status';
+import { getOrderStatusDescription } from '../../telegram-constants';
 import { ExecutorConst } from './executor-const';
+
+/**
+ * Прибирає inline-клавіатуру з повідомлення, на якому натиснули кнопку.
+ *
+ * Викликається в @Action-хендлерах одразу після `ctx.answerCbQuery()`,
+ * щоб старі кнопки зникали після натискання (а не «висіли» під повідомленням).
+ * Помилки ігноруються: повідомлення може бути застарілим або вже без клавіатури.
+ */
+export async function clearInlineKeyboard(ctx: any): Promise<void> {
+  try {
+    await ctx.editMessageReplyMarkup?.({ inline_keyboard: [] });
+  } catch {
+    // noop — немає що прибирати
+  }
+}
 
 /** Статуси, які ще «в руках» виконавця — показуємо в «Мої замовлення» */
 export const ACTIVE_ORDER_STATUSES: OrderStatus[] = [
@@ -136,24 +151,30 @@ export function formatOrderDetails(
 
   lines.push(ExecutorConst.MyOrdersDetailsTitle(order.id));
   if (order.isOverdue) {
-    lines.push('🔴 <b>ПРОСТРОЧЕНО</b>');
+    lines.push(ExecutorConst.OrderDetailsOverdue);
   }
 
   lines.push('');
-  lines.push(`📌 <b>Послуга:</b> ${escapeHtml(order.service?.name) || '—'}`);
   lines.push(
-    `➕ <b>Додаткові послуги:</b>${formatAdditionalServices(order.additionalServices)}`,
+    `${ExecutorConst.OrderDetailsServiceLabel} ${escapeHtml(order.service?.name) || '—'}`,
   );
-  lines.push(`📅 <b>Дата виконання:</b> ${formatDate(order.deadlines?.serviceDateFrom)}`);
   lines.push(
-    `⏰ <b>Виконати до:</b> ${escapeHtml(order.deadlineDisplay?.executionDeadline) || '—'}` +
+    `${ExecutorConst.OrderDetailsAdditionalServicesLabel}${formatAdditionalServices(order.additionalServices)}`,
+  );
+  lines.push(
+    `${ExecutorConst.OrderDetailsDateLabel} ${formatDate(order.deadlines?.serviceDateFrom)}`,
+  );
+  lines.push(
+    `${ExecutorConst.OrderDetailsDeadlineLabel} ${escapeHtml(order.deadlineDisplay?.executionDeadline) || '—'}` +
       (order.deadlineDisplay?.remaining
-        ? ` (залишилось: ${escapeHtml(order.deadlineDisplay.remaining)})`
+        ? ExecutorConst.OrderDetailsRemaining(escapeHtml(order.deadlineDisplay.remaining))
         : ''),
   );
-  lines.push(`📊 <b>Статус:</b> ${getOrderStatusDescription(order.status)}`);
   lines.push(
-    `💬 <b>Коментар клієнта:</b> ${
+    `${ExecutorConst.OrderDetailsStatusLabel} ${getOrderStatusDescription(order.status)}`,
+  );
+  lines.push(
+    `${ExecutorConst.OrderDetailsClientCommentLabel} ${
       order.clientComment?.trim()
         ? escapeHtml(order.clientComment.trim())
         : ExecutorConst.MyOrdersNoClientComment
@@ -162,20 +183,32 @@ export function formatOrderDetails(
 
   // Клієнт — тільки те, що потрібно для виконання
   lines.push('');
-  lines.push('👤 <b>Клієнт:</b>');
-  lines.push(`  • Ім'я: ${escapeHtml(order.client?.name) || '—'}`);
-  lines.push(`  • Телефон: ${escapeHtml(order.client?.phone) || '—'}`);
+  lines.push(ExecutorConst.OrderDetailsClientLabel);
+  lines.push(
+    `${ExecutorConst.OrderDetailsClientNameLabel} ${escapeHtml(order.client?.name) || '—'}`,
+  );
+  lines.push(
+    `${ExecutorConst.OrderDetailsClientPhoneLabel} ${escapeHtml(order.client?.phone) || '—'}`,
+  );
 
   // Місце виконання — без нього виконавець не знайде могилу
   lines.push('');
-  lines.push('📍 <b>Місце виконання:</b>');
-  lines.push(`  • Кладовище: ${escapeHtml(burial?.cemetery) || '—'}`);
-  lines.push(`  • Сектор / ряд / номер: ${escapeHtml(burial?.notes) || '—'}`);
-  lines.push(`  • GPS: ${escapeHtml(burial?.coordinates) || '—'}`);
+  lines.push(ExecutorConst.OrderDetailsLocationLabel);
+  lines.push(
+    `${ExecutorConst.OrderDetailsCemeteryLabel} ${escapeHtml(burial?.cemetery) || '—'}`,
+  );
+  lines.push(
+    `${ExecutorConst.OrderDetailsSectorLabel} ${escapeHtml(burial?.notes) || '—'}`,
+  );
+  lines.push(
+    `${ExecutorConst.OrderDetailsGpsLabel} ${escapeHtml(burial?.coordinates) || '—'}`,
+  );
   const burialFullName = burial
     ? `${burial.burialLastName ?? ''} ${burial.burialName ?? ''} ${burial.burialFatherName ?? ''}`.trim()
     : '';
-  lines.push(`  • ПІБ: ${escapeHtml(burialFullName) || '—'}`);
+  lines.push(
+    `${ExecutorConst.OrderDetailsFullNameLabel} ${escapeHtml(burialFullName) || '—'}`,
+  );
 
   return lines.join('\n');
 }
@@ -191,7 +224,11 @@ export function buildOrderListKeyboard(
 ): ReturnType<typeof Markup.inlineKeyboard> {
   const buttons = orders.map((order) => [
     Markup.button.callback(
-      `№${order.id} · ${order.service?.name ?? '—'} · ${getOrderStatusDescription(order.status)}`,
+      ExecutorConst.OrderListButtonFormat(
+        order.id,
+        order.service?.name ?? '—',
+        getOrderStatusDescription(order.status),
+      ),
       `${prefix}open_${order.id}`,
     ),
   ]);
@@ -245,7 +282,7 @@ export function buildPaginatedOrderKeyboard(
 ): ReturnType<typeof Markup.inlineKeyboard> {
   const buttons = pageItems.map((order) => [
     Markup.button.callback(
-      `№${order.id} · ${order.service?.name ?? '—'}`,
+      ExecutorConst.OrderListButtonFormatShort(order.id, order.service?.name ?? '—'),
       `${prefix}open_${order.id}`,
     ),
   ]);

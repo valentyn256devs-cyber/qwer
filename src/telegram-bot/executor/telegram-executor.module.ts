@@ -3,6 +3,7 @@ import { TelegramExecutorListener } from './telegram-executor-listener';
 import { OrdersModule } from '../../orders/orders.module';
 import { ServicesModule } from '../../services/services.module';
 import { BurialsModule } from '../../burials/burials.module';
+import { PerformersModule } from '../../performers/performers.module';
 import { OpenOrdersScene } from './scenes/open-orders.scene';
 import { MyOrdersScene } from './scenes/my-orders.scene';
 import { DoneOrdersScene } from './scenes/done-orders.scene';
@@ -15,9 +16,10 @@ import { FinalSelfcheckScene } from './scenes/final-selfcheck.scene';
 import { AfterPhotosScene } from './scenes/after-photos.scene';
 import { SubmitScene } from './scenes/submit.scene';
 import { RevisionScene } from './scenes/revision.scene';
+import { CreatePerformerScene } from '../performer/scene/create-performer.scene';
 
 @Module({
-  imports: [OrdersModule, ServicesModule, BurialsModule],
+  imports: [OrdersModule, ServicesModule, BurialsModule, PerformersModule],
   providers: [
     TelegramExecutorListener,
     OpenOrdersScene,
@@ -32,6 +34,7 @@ import { RevisionScene } from './scenes/revision.scene';
     AfterPhotosScene,
     SubmitScene,
     RevisionScene,
+    CreatePerformerScene,
   ],
 })
 export class TelegramExecutorModule {}

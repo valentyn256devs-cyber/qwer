@@ -7,14 +7,15 @@ import {
   Scene as SceneConst,
   executorMainMenuButtons,
 } from '../../telegram-constants';
-import { ExecutorConst } from '../executor-const';
+import { ExecutorConst } from '../model/executor-const';
 import {
   DONE_ORDER_STATUSES,
   ExecutorOrder,
   buildPaginatedOrderKeyboard,
+  clearInlineKeyboard,
   formatOrderDetails,
   paginate,
-} from '../executor-order-view';
+} from '../model/executor-order-view';
 import type { ExecutorWizardContext } from '../interfaces/executor-wizard-context.interface';
 
 /** Спільна частина callback_data для цієї сцени */
@@ -50,6 +51,7 @@ export class DoneOrdersScene {
   @Action(`${CB_PREFIX}next`)
   async onNextPage(@Ctx() ctx: ExecutorWizardContext) {
     await ctx.answerCbQuery?.();
+    await clearInlineKeyboard(ctx);
     const current = ctx.session?.doneOrdersPage ?? 0;
     await this.showDoneOrdersPage(ctx, current + 1);
   }
@@ -57,6 +59,7 @@ export class DoneOrdersScene {
   @Action(`${CB_PREFIX}prev`)
   async onPrevPage(@Ctx() ctx: ExecutorWizardContext) {
     await ctx.answerCbQuery?.();
+    await clearInlineKeyboard(ctx);
     const current = ctx.session?.doneOrdersPage ?? 0;
     await this.showDoneOrdersPage(ctx, current - 1);
   }
@@ -65,6 +68,7 @@ export class DoneOrdersScene {
   @Action(`${CB_PREFIX}noop`)
   async onNoop(@Ctx() ctx: ExecutorWizardContext) {
     await ctx.answerCbQuery?.();
+    await clearInlineKeyboard(ctx);
   }
 
   // ==================== Перегляд деталей ====================
@@ -73,6 +77,7 @@ export class DoneOrdersScene {
   async onOpenOrder(@Ctx() ctx: ExecutorWizardContext) {
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await ctx.answerCbQuery?.();
+    await clearInlineKeyboard(ctx);
     if (!orderId) return;
     await this.showOrderDetails(ctx, orderId);
   }
@@ -81,6 +86,7 @@ export class DoneOrdersScene {
   @Action(`${CB_PREFIX}back`)
   async onBackToList(@Ctx() ctx: ExecutorWizardContext) {
     await ctx.answerCbQuery?.();
+    await clearInlineKeyboard(ctx);
     const current = ctx.session?.doneOrdersPage ?? 0;
     await this.showDoneOrdersPage(ctx, current);
   }
@@ -90,6 +96,7 @@ export class DoneOrdersScene {
   @Action(`${CB_PREFIX}cancel`)
   async onCancel(@Ctx() ctx: ExecutorWizardContext) {
     await ctx.answerCbQuery?.();
+    await clearInlineKeyboard(ctx);
     await ctx.reply(ExecutorConst.BackToMenuMessage, {
       reply_markup: executorMainMenuButtons,
     });
@@ -99,6 +106,7 @@ export class DoneOrdersScene {
   @Action(`${CB_PREFIX}menu`)
   async onBackToMenu(@Ctx() ctx: ExecutorWizardContext) {
     await ctx.answerCbQuery?.();
+    await clearInlineKeyboard(ctx);
     await ctx.reply(ExecutorConst.BackToMenuMessage, {
       reply_markup: executorMainMenuButtons,
     });

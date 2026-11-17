@@ -1,6 +1,9 @@
 export const PerformerTable = {
   TableName: 'Performer',
   Fields: {
+    TelegramId: 'telegramId', // Telegram user ID — primary key for identification
+    Username: 'username', // Telegram @username (nickname)
+    PhoneNumber: 'phoneNumber', // Contact phone number
     LastName: 'lastName', // Basic personal data
     FirstName: 'firstName',
     Patronymic: 'patronymic',

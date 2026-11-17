@@ -3,18 +3,16 @@ import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
 import { BurialsService } from '../../../burials/burials.service';
 import { OrderStatus } from '../../../orders/models/order-status';
-import {
-  ExecutorMenu,
-  Scene as SceneConst,
-} from '../../telegram-constants';
-import { ExecutorConst } from '../executor-const';
+import { ExecutorMenu, Scene as SceneConst, } from '../../telegram-constants';
+import { ExecutorConst } from '../model/executor-const';
 import {
   ACTIVE_ORDER_STATUSES,
-  ExecutorOrder,
   buildOrderListKeyboard,
+  clearInlineKeyboard,
+  ExecutorOrder,
   formatOrderDetails,
   resolveContinueAction,
-} from '../executor-order-view';
+} from '../model/executor-order-view';
 import type { ExecutorWizardContext } from '../interfaces/executor-wizard-context.interface';
 
 /** Спільна частина callback_data для цієї сцени */
@@ -34,7 +32,8 @@ export class MyOrdersScene {
   constructor(
     private readonly ordersService: OrdersService,
     private readonly burialsService: BurialsService,
-  ) {}
+  ) {
+  }
 
   // ==================== Крок 1: список активних замовлень ====================
 
@@ -48,6 +47,7 @@ export class MyOrdersScene {
   @Action(`${CB_PREFIX}refresh`)
   async onRefresh(@Ctx() ctx: ExecutorWizardContext) {
     await ctx.answerCbQuery?.();
+    await clearInlineKeyboard(ctx);
     await this.showOrdersList(ctx);
   }
 
@@ -55,6 +55,7 @@ export class MyOrdersScene {
   async onOpenOrder(@Ctx() ctx: ExecutorWizardContext) {
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await ctx.answerCbQuery?.();
+    await clearInlineKeyboard(ctx);
     if (!orderId) return;
     await this.showOrderDetails(ctx, orderId);
   }
@@ -63,6 +64,7 @@ export class MyOrdersScene {
   async onContinueOrder(@Ctx() ctx: ExecutorWizardContext) {
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await ctx.answerCbQuery?.();
+    await clearInlineKeyboard(ctx);
     if (!orderId) return;
     await this.continueOrder(ctx, orderId);
   }
@@ -70,12 +72,14 @@ export class MyOrdersScene {
   @Action(`${CB_PREFIX}back`)
   async onBackToOrders(@Ctx() ctx: ExecutorWizardContext) {
     await ctx.answerCbQuery?.();
+    await clearInlineKeyboard(ctx);
     await this.showOrdersList(ctx);
   }
 
   @Action(`${CB_PREFIX}menu`)
   async onBackToMenu(@Ctx() ctx: ExecutorWizardContext) {
     await ctx.answerCbQuery?.();
+    await clearInlineKeyboard(ctx);
     await ctx.reply(ExecutorConst.BackToMenuMessage);
     return ctx.scene.leave();
   }
@@ -227,7 +231,7 @@ export class MyOrdersScene {
         try {
           await this.ordersService.startExecution(order.id, executorId);
         } catch (error) {
-          await ctx.reply(`❌ ${(error as Error).message}`);
+          await ctx.reply(ExecutorConst.MyOrdersStartError((error as Error).message));
           return;
         }
         await ctx.reply(ExecutorConst.MyOrdersStarted, { parse_mode: 'HTML' });

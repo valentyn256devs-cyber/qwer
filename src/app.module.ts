@@ -10,6 +10,7 @@ import {TelegramExecutorModule} from "./telegram-bot/executor/telegram-executor.
 import {TelegramBot} from "./telegram-bot/telegram-constants";
 import {TelegramAdminModule} from "./telegram-bot/admin/telegram-admin.module";
 import {BurialsModule} from "./burials/burials.module";
+import {PerformersModule} from "./performers/performers.module";
 import {BotInitializerService} from "./telegram-bot/bot-init.service";
 
 @Module({
@@ -64,6 +65,7 @@ import {BotInitializerService} from "./telegram-bot/bot-init.service";
     ServicesModule,
     OrdersModule,
     BurialsModule,
+    PerformersModule,
   ],
   providers: [Back4appService, BotInitializerService],
   exports: [Back4appService],

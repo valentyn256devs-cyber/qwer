@@ -1,14 +1,16 @@
 import { Update, Hears, Command, Ctx, Start, Action, On } from 'nestjs-telegraf';
-import { Context, Markup } from 'telegraf';
+import { Markup } from 'telegraf';
 import type { SceneContext } from 'telegraf/scenes';
 import { OrdersService } from '../../orders/orders.service';
+import { PerformersService } from '../../performers/performers.service';
+import { PerformerConst } from '../../performers/performer-const';
 import {
   ExecutorInabilityReason,
   ExecutorInabilityReasonLabels,
   ExecutorInabilityReasonsRequiringComment,
 } from '../../orders/models/order-status';
 import { ExecutorMenu, executorMainMenuButtons, Scene } from '../telegram-constants';
-import { ExecutorConst } from './executor-const';
+import { ExecutorConst } from './model/executor-const';
 
 /** Req 48: Help / Report problem reasons (no status change) */
 const PROBLEM_REASONS = [
@@ -23,10 +25,30 @@ const PROBLEM_REASONS = [
 
 @Update()
 export class TelegramExecutorListener {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(
+    private readonly ordersService: OrdersService,
+    private readonly performersService: PerformersService,
+  ) {}
 
   @Start()
-  async onStart(@Ctx() ctx: Context) {
+  async onStart(@Ctx() ctx: any) {
+    const telegramId = ctx.from?.id?.toString() ?? '';
+
+    // Якщо виконавця ще немає в базі — запускаємо коротку анкету
+    try {
+      const exists = await this.performersService.exists(telegramId);
+      if (!exists) {
+        await ctx.reply(
+          `${PerformerConst.OnboardingWelcomeTitle}\n\n${PerformerConst.OnboardingWelcomeDescription}`,
+          { parse_mode: 'HTML' },
+        );
+        return ctx.scene.enter(Scene.CREATE_PERFORMER_WIZARD);
+      }
+    } catch (error) {
+      // Якщо перевірка не вдалася — не блокуємо користувача
+      console.error('Помилка перевірки виконавця:', error);
+    }
+
     await ctx.reply(ExecutorConst.Welcome, {
       reply_markup: executorMainMenuButtons,
     });
@@ -50,6 +72,77 @@ export class TelegramExecutorListener {
     await ctx.scene.enter(Scene.DONE_ORDERS_SCENE);
   }
 
+  // ==================== Підтвердження / відмова від нового замовлення ====================
+
+  @Action(/^executor_confirm_order_(.+)$/)
+  async onConfirmOrder(@Ctx() ctx: any) {
+    const orderId = ctx.match?.[1] ?? '';
+    const executorId = ctx.from?.id?.toString() ?? '';
+    await ctx.answerCbQuery?.();
+    if (!orderId || !executorId) return;
+
+    // Перевіряємо, чи замовлення вже має виконавця — якщо так, показуємо конфлікт
+    try {
+      const existing = await this.ordersService.findById(orderId);
+      const currentExecutor = existing?.assignment?.executorId ?? null;
+      if (currentExecutor && currentExecutor !== executorId) {
+        await ctx
+          .editMessageText(ExecutorConst.NewOrderTakenByOther(orderId), {
+            parse_mode: 'HTML',
+          })
+          .catch(() => null);
+        return;
+      }
+      // Якщо цей самий виконавець уже підтвердив — просто оновлюємо повідомлення
+      if (currentExecutor === executorId) {
+        await ctx
+          .editMessageText(ExecutorConst.NewOrderConfirmedByMe(orderId), {
+            parse_mode: 'HTML',
+          })
+          .catch(() => null);
+        return;
+      }
+    } catch {
+      // Якщо перевірка не вдалася — не блокуємо, assignExecutor сам перевірить
+    }
+
+    try {
+      await this.ordersService.assignExecutor(orderId, executorId, 'executor_bot');
+      // Сповіщаємо адміністратора, що виконавець підтвердив замовлення
+      await this.ordersService.notifyAdminAboutExecutorConfirm(orderId, executorId);
+      await ctx
+        .editMessageText(ExecutorConst.NewOrderConfirmedByMe(orderId), {
+          parse_mode: 'HTML',
+        })
+        .catch(() => null);
+    } catch (error: any) {
+      const message = (error as Error).message ?? '';
+      const isConflict =
+        message.includes('вже прийняте') || message.includes('уже взято');
+      if (isConflict) {
+        await ctx
+          .editMessageText(ExecutorConst.NewOrderTakenByOther(orderId), {
+            parse_mode: 'HTML',
+          })
+          .catch(() => null);
+      } else {
+        await ctx.reply(ExecutorConst.NewOrderConfirmError).catch(() => null);
+      }
+    }
+  }
+
+  @Action(/^executor_decline_order_(.+)$/)
+  async onDeclineOrder(@Ctx() ctx: any) {
+    const orderId = ctx.match?.[1] ?? '';
+    await ctx.answerCbQuery?.();
+    if (!orderId) return;
+    await ctx
+      .editMessageText(ExecutorConst.NewOrderDeclinedByMe(orderId), {
+        parse_mode: 'HTML',
+      })
+      .catch(() => null);
+  }
+
   @Hears(ExecutorMenu.Help)
   @Command('help')
   async onHelp(@Ctx() ctx: SceneContext) {
@@ -71,8 +164,8 @@ export class TelegramExecutorListener {
     const buttons = (Object.values(ExecutorInabilityReason) as ExecutorInabilityReason[]).map((r) => [
       Markup.button.callback(ExecutorInabilityReasonLabels[r], `executor_inability_${orderId}_${r}`),
     ]);
-    buttons.push([Markup.button.callback('↩️ Скасувати', 'executor_back_to_menu')]);
-    await ctx.reply('❌ <b>Не можу виконати замовлення</b>\n\nОберіть причину:', {
+    buttons.push([Markup.button.callback(ExecutorConst.CancelButton, 'executor_back_to_menu')]);
+    await ctx.reply(ExecutorConst.CannotCompleteTitle, {
       parse_mode: 'HTML',
       reply_markup: Markup.inlineKeyboard(buttons).reply_markup,
     });
@@ -81,7 +174,7 @@ export class TelegramExecutorListener {
   @Action('executor_cannot_complete_pick')
   async onCannotCompletePick(@Ctx() ctx: any) {
     await ctx.answerCbQuery?.();
-    await ctx.reply('Будь ласка, відкрийте замовлення з розділу «Мої замовлення» та натисніть «Не можу виконати замовлення».');
+    await ctx.reply(ExecutorConst.CannotCompletePickHint);
   }
 
   @Action(/^executor_inability_(.+?)_(.+)$/)
@@ -93,7 +186,7 @@ export class TelegramExecutorListener {
     ctx.session = ctx.session || {};
     ctx.session.executorInability = { orderId, reason };
     if (needsComment) {
-      await ctx.reply('✍️ Будь ласка, додайте коментар (обовʼязково для обраної причини):');
+      await ctx.reply(ExecutorConst.InabilityCommentPrompt);
       return;
     }
     await this.submitInability(ctx, orderId, reason, undefined);
@@ -118,16 +211,13 @@ export class TelegramExecutorListener {
     const prob = ctx.session?.executorProblem;
     if (prob?.orderId && prob?.step === 'comment') {
       ctx.session.executorProblem = { ...prob, comment: text, step: 'photos' };
-      await ctx.reply(
-        '📷 Надішліть фото (необовʼязково) або натисніть «Надіслати без фото». Коли закінчите — натисніть «Надіслати».',
-        {
-          reply_markup: Markup.inlineKeyboard([
-            [Markup.button.callback('✅ Надіслати', 'executor_problem_send')],
-            [Markup.button.callback('⏭ Надіслати без фото', 'executor_problem_skip_photos')],
-            [Markup.button.callback('↩️ Скасувати', 'executor_back_to_menu')],
-          ]).reply_markup,
-        },
-      );
+      await ctx.reply(ExecutorConst.ProblemPhotosPrompt, {
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback(ExecutorConst.SendButton, 'executor_problem_send')],
+          [Markup.button.callback(ExecutorConst.SkipPhotosButton, 'executor_problem_skip_photos')],
+          [Markup.button.callback(ExecutorConst.CancelButton, 'executor_back_to_menu')],
+        ]).reply_markup,
+      });
       return;
     }
   }
@@ -142,10 +232,10 @@ export class TelegramExecutorListener {
     if (!fileId) return;
     const ids = [...(prob.photoFileIds || []), fileId];
     ctx.session.executorProblem = { ...prob, photoFileIds: ids };
-    await ctx.reply(`📷 Фото додано (${ids.length}). Надішліть ще або натисніть «Надіслати».`, {
+    await ctx.reply(ExecutorConst.ProblemPhotoAdded(ids.length), {
       reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback('✅ Надіслати', 'executor_problem_send')],
-        [Markup.button.callback('↩️ Скасувати', 'executor_back_to_menu')],
+        [Markup.button.callback(ExecutorConst.SendButton, 'executor_problem_send')],
+        [Markup.button.callback(ExecutorConst.CancelButton, 'executor_back_to_menu')],
       ]).reply_markup,
     });
   }
@@ -161,11 +251,11 @@ export class TelegramExecutorListener {
         photoFileIds: p.photoFileIds || [],
       });
       ctx.session.executorProblem = null;
-      await ctx.reply('✅ Повідомлення про проблему надіслано адміністратору. Статус замовлення не змінено.', {
+      await ctx.reply(ExecutorConst.ProblemSentSuccess, {
         reply_markup: executorMainMenuButtons,
       });
     } catch (e: any) {
-      await ctx.reply(`❌ ${e?.message ?? 'Не вдалося надіслати повідомлення.'}`, {
+      await ctx.reply(`❌ ${e?.message ?? ExecutorConst.SendErrorMessage}`, {
         reply_markup: executorMainMenuButtons,
       });
     }
@@ -185,7 +275,7 @@ export class TelegramExecutorListener {
   @Action('executor_report_problem_pick')
   async onReportProblemPick(@Ctx() ctx: any) {
     await ctx.answerCbQuery?.();
-    await ctx.reply('Відкрийте замовлення з розділу «Мої замовлення» та натисніть «Повідомити про проблему».');
+    await ctx.reply(ExecutorConst.ReportProblemPickHint);
   }
 
   @Action(/^executor_report_problem_(.+)$/)
@@ -197,8 +287,8 @@ export class TelegramExecutorListener {
     const buttons = PROBLEM_REASONS.map((r, i) => [
       Markup.button.callback(r, `executor_problem_reason_${orderId}_${i}`),
     ]);
-    buttons.push([Markup.button.callback('↩️ Скасувати', 'executor_back_to_menu')]);
-    await ctx.reply('🆘 <b>Повідомити про проблему</b>\n\nОберіть причину:', {
+    buttons.push([Markup.button.callback(ExecutorConst.CancelButton, 'executor_back_to_menu')]);
+    await ctx.reply(ExecutorConst.ReportProblemTitle, {
       parse_mode: 'HTML',
       reply_markup: Markup.inlineKeyboard(buttons).reply_markup,
     });
@@ -212,8 +302,8 @@ export class TelegramExecutorListener {
     await ctx.answerCbQuery?.();
     ctx.session = ctx.session || {};
     ctx.session.executorProblem = { ...(ctx.session.executorProblem || {}), orderId, reason, step: 'comment', photoFileIds: [] };
-    await ctx.reply('✍️ Опишіть проблему (коментар). Після коментаря ви зможете додати фото (необовʼязково) або натиснути «Надіслати».', {
-      reply_markup: Markup.inlineKeyboard([[Markup.button.callback('↩️ Скасувати', 'executor_back_to_menu')]]).reply_markup,
+    await ctx.reply(ExecutorConst.ProblemCommentPrompt, {
+      reply_markup: Markup.inlineKeyboard([[Markup.button.callback(ExecutorConst.CancelButton, 'executor_back_to_menu')]]).reply_markup,
     });
   }
 
@@ -222,7 +312,7 @@ export class TelegramExecutorListener {
     await ctx.answerCbQuery?.();
     const p = ctx.session?.executorProblem;
     if (!p?.orderId || !p?.reason) {
-      await ctx.reply('Немає активного звіту про проблему.');
+      await ctx.reply(ExecutorConst.NoActiveProblemReport);
       return;
     }
     await this.submitProblem(ctx, p);
@@ -239,19 +329,19 @@ export class TelegramExecutorListener {
   @Action(/^executor_clarify/)
   @Action(/^executor_propose_update/)
   async onPlaceholderActions(@Ctx() ctx: any) {
-    await ctx.answerCbQuery?.('Ця дія буде реалізована найближчим часом.');
+    await ctx.answerCbQuery?.(ExecutorConst.PlaceholderActionHint);
   }
 
   private async submitInability(ctx: any, orderId: string, reason: ExecutorInabilityReason, comment?: string) {
     const executorId = ctx.from?.id?.toString?.() ?? '';
     try {
       await this.ordersService.reportExecutorInability(orderId, executorId, reason, comment);
-      await ctx.reply(
-        '✅ <b>Повідомлення надіслано адміністратору.</b>\nЗамовлення повернуто у відкриті для перепризначення.',
-        { parse_mode: 'HTML', reply_markup: executorMainMenuButtons },
-      );
+      await ctx.reply(ExecutorConst.InabilitySentSuccess, {
+        parse_mode: 'HTML',
+        reply_markup: executorMainMenuButtons,
+      });
     } catch (e: any) {
-      await ctx.reply(`❌ ${e?.message ?? 'Не вдалося надіслати повідомлення.'}`, {
+      await ctx.reply(`❌ ${e?.message ?? ExecutorConst.SendErrorMessage}`, {
         reply_markup: executorMainMenuButtons,
       });
     }

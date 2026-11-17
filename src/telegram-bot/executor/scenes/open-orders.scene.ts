@@ -2,7 +2,7 @@ import { Ctx, Wizard, WizardStep } from 'nestjs-telegraf';
 import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
 import { Scene as SceneConst } from '../../telegram-constants';
-import { ExecutorConst } from '../executor-const';
+import { ExecutorConst } from '../model/executor-const';
 import type { ExecutorWizardContext } from '../interfaces/executor-wizard-context.interface';
 
 @Wizard(SceneConst.OPEN_ORDERS_SCENE)
@@ -22,16 +22,18 @@ export class OpenOrdersScene {
       }
 
       for (const order of orders) {
-        const overdueMark = (order as any).isOverdue ? ' 🔴 <b>ПРОСТРОЧЕНО</b>' : '';
+        const overdueMark = (order as any).isOverdue
+          ? ` ${ExecutorConst.OrderDetailsOverdue}`
+          : '';
         const msg =
-          `📌 <b>Замовлення №${order.id}</b>${overdueMark}\n` +
+          `${ExecutorConst.OpenOrdersCardTitle(order.id)}${overdueMark}\n` +
           `#\u200B${order.id}\n` +
-          `🏷 Послуга: <b>${order.service?.name ?? '—'}</b>\n` +
-          `📍 Адреса / кладовище: ${order.details?.burialId ? 'див. картку' : '—'}\n` +
-          `📅 Бажана дата: ${order.deadlines?.serviceDateFrom ? new Date(order.deadlines.serviceDateFrom).toLocaleDateString('uk-UA') : '—'}\n` +
-          `⏰ Виконати до: ${(order as any).deadlineDisplay?.executionDeadline ?? '—'}\n` +
-          `⏱ Залишилось: ${(order as any).deadlineDisplay?.remaining ?? '—'}\n` +
-          `📝 Коментар: ${order.report?.adminComment ?? '—'}`;
+          `${ExecutorConst.OpenOrdersCardServiceLabel} <b>${order.service?.name ?? ExecutorConst.OpenOrdersCardDash}</b>\n` +
+          `${ExecutorConst.OpenOrdersCardAddressLabel} ${order.details?.burialId ? ExecutorConst.OpenOrdersCardAddressHint : ExecutorConst.OpenOrdersCardDash}\n` +
+          `${ExecutorConst.OpenOrdersCardDateLabel} ${order.deadlines?.serviceDateFrom ? new Date(order.deadlines.serviceDateFrom).toLocaleDateString('uk-UA') : ExecutorConst.OpenOrdersCardDash}\n` +
+          `${ExecutorConst.OpenOrdersCardDeadlineLabel} ${(order as any).deadlineDisplay?.executionDeadline ?? ExecutorConst.OpenOrdersCardDash}\n` +
+          `${ExecutorConst.OpenOrdersCardRemainingLabel} ${(order as any).deadlineDisplay?.remaining ?? ExecutorConst.OpenOrdersCardDash}\n` +
+          `${ExecutorConst.OpenOrdersCardCommentLabel} ${order.report?.adminComment ?? ExecutorConst.OpenOrdersCardDash}`;
 
         await ctx.reply(msg, {
           parse_mode: 'HTML',
