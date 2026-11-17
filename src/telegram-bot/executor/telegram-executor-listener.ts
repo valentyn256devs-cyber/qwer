@@ -1,5 +1,5 @@
-import { Update, Hears, Command, Ctx, SceneEnter, Action, On } from 'nestjs-telegraf';
-import { Markup } from 'telegraf';
+import { Update, Hears, Command, Ctx, Start, Action, On } from 'nestjs-telegraf';
+import { Context, Markup } from 'telegraf';
 import type { SceneContext } from 'telegraf/scenes';
 import { OrdersService } from '../../orders/orders.service';
 import {
@@ -7,7 +7,7 @@ import {
   ExecutorInabilityReasonLabels,
   ExecutorInabilityReasonsRequiringComment,
 } from '../../orders/models/order-status';
-import { Scene } from '../telegram-constants';
+import { ExecutorMenu, executorMainMenuButtons, Scene } from '../telegram-constants';
 import { ExecutorConst } from './executor-const';
 
 /** Req 48: Help / Report problem reasons (no status change) */
@@ -21,22 +21,16 @@ const PROBLEM_REASONS = [
   'Інше',
 ] as const;
 
-export const ExecutorMenu = {
-  OpenOrders: '📋 Відкриті замовлення',
-  MyOrders: '💼 Мої замовлення',
-  DoneOrders: '✅ Виконані',
-  Help: '🆘 Допомога / Проблема',
-} as const;
-
-export const executorMainMenuButtons = Markup.keyboard([
-  [ExecutorMenu.OpenOrders],
-  [ExecutorMenu.MyOrders, ExecutorMenu.DoneOrders],
-  [ExecutorMenu.Help],
-]).resize().reply_markup;
-
 @Update()
 export class TelegramExecutorListener {
   constructor(private readonly ordersService: OrdersService) {}
+
+  @Start()
+  async onStart(@Ctx() ctx: Context) {
+    await ctx.reply(ExecutorConst.Welcome, {
+      reply_markup: executorMainMenuButtons,
+    });
+  }
 
   @Hears(ExecutorMenu.OpenOrders)
   @Command('open_orders')
@@ -263,10 +257,4 @@ export class TelegramExecutorListener {
     }
   }
 
-  @SceneEnter()
-  async onSceneEnter(@Ctx() ctx: SceneContext) {
-    await ctx.reply(ExecutorConst.Welcome, {
-      reply_markup: executorMainMenuButtons,
-    });
-  }
 }

@@ -4,10 +4,10 @@ import request from 'supertest';
 import { App } from 'supertest/types';
 import { AppModule } from './../src/app.module';
 
-describe('AppController (e2e)', () => {
+describe('App (e2e)', () => {
   let app: INestApplication<App>;
 
-  beforeEach(async () => {
+  beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -16,14 +16,29 @@ describe('AppController (e2e)', () => {
     await app.init();
   });
 
-  it('/ (GET)', () => {
+  it('/services (GET) returns the list of services', () => {
     return request(app.getHttpServer())
-      .get('/')
+      .get('/services')
       .expect(200)
-      .expect('Hello World!');
+      .expect((res) => {
+        if (!Array.isArray(res.body)) {
+          throw new Error('Expected /services to return an array');
+        }
+      });
   });
 
-  afterEach(async () => {
+  it('/orders (GET) returns the list of orders', () => {
+    return request(app.getHttpServer())
+      .get('/orders')
+      .expect(200)
+      .expect((res) => {
+        if (!Array.isArray(res.body)) {
+          throw new Error('Expected /orders to return an array');
+        }
+      });
+  });
+
+  afterAll(async () => {
     await app.close();
   });
 });

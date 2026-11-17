@@ -7,6 +7,10 @@ export const OrderTable = {
     TelegramId: 'telegramId',
     Status: 'status',
     Service: 'service',
+    /** Додаткові послуги, які клієнт обрав разом із основним замовленням */
+    AdditionalServices: 'additionalServices',
+    /** Коментар/побажання клієнта до замовлення */
+    ClientComment: 'clientComment',
     ClientPhotos: 'clientPhotos',
     ReportPhotosBefore: 'reportPhotosBefore',
     ReportPhotosAfter: 'reportPhotosAfter',

@@ -4,6 +4,8 @@ import { OrdersModule } from '../../orders/orders.module';
 import { ServicesModule } from '../../services/services.module';
 import { BurialsModule } from '../../burials/burials.module';
 import { OpenOrdersScene } from './scenes/open-orders.scene';
+import { MyOrdersScene } from './scenes/my-orders.scene';
+import { DoneOrdersScene } from './scenes/done-orders.scene';
 import { AcceptOrderScene } from './scenes/accept-order.scene';
 import { OrderDetailsScene } from './scenes/order-details.scene';
 import { SearchVerifyScene } from './scenes/search-verify.scene';
@@ -19,6 +21,8 @@ import { RevisionScene } from './scenes/revision.scene';
   providers: [
     TelegramExecutorListener,
     OpenOrdersScene,
+    MyOrdersScene,
+    DoneOrdersScene,
     AcceptOrderScene,
     OrderDetailsScene,
     SearchVerifyScene,

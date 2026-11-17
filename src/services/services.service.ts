@@ -45,10 +45,11 @@ export class ServicesService implements OnApplicationBootstrap {
       const query = new Parse.Query(this.serviceClassName);
       query.ascending('price');
 
-      const results = await query.find({useMasterKey: true});
+      const results = await query.find();
       return results.map((s) => this.mapServiceFields(s));
     } catch (error) {
-      return Promise.reject(error);
+      this.logger.error('Не вдалося отримати список послуг:', error);
+      throw error;
     }
   }
 
@@ -56,7 +57,7 @@ export class ServicesService implements OnApplicationBootstrap {
   async findOne(id: string) {
     const query = new Parse.Query(this.serviceClassName);
     try {
-      const service = await query.get(id, { useMasterKey: true });
+      const service = await query.get(id);
       return this.mapServiceFields(service);
     } catch (error) {
       this.logger.error(error);

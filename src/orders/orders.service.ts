@@ -61,6 +61,7 @@ export class OrdersService {
       telegramId,
       serviceId,
       burialId,
+      customComment,
       serviceDateFrom,
       serviceDateTo,
       executionDeadline,
@@ -93,6 +94,9 @@ export class OrdersService {
     order.set(OrderTable.Fields.ReportPhotosBefore, []);
     order.set(OrderTable.Fields.ReportPhotosAfter, []);
     order.set(OrderTable.Fields.AdminComment, '');
+    // Побажання/коментар клієнта — потрібні виконавцю для виконання
+    order.set(OrderTable.Fields.ClientComment, customComment ?? '');
+    order.set(OrderTable.Fields.AdditionalServices, []);
 
     const savedOrder = await order.save();
     await this.recordStatusHistory({
@@ -1004,6 +1008,11 @@ export class OrdersService {
       details: {
         burialId: order.get(OrderTable.Fields.BurialId) as string,
       },
+      additionalServices:
+        (order.get(OrderTable.Fields.AdditionalServices) as string[] | undefined) ??
+        [],
+      clientComment:
+        (order.get(OrderTable.Fields.ClientComment) as string | undefined) ?? '',
       report: {
         clientPhotos: getUrls(
           order.get(OrderTable.Fields.ClientPhotos) as Parse.File[] | undefined,

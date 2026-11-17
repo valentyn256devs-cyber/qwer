@@ -14,10 +14,10 @@ export class Back4appService implements OnModuleInit {
     const masterKey = this.configService.get<string>('BACK4APP_MASTER_KEY');
     const serverUrl = this.configService.get<string>('BACK4APP_SERVER_URL');
 
-    this.logger.log(`appId = ${appId}`)
-    this.logger.log(`jsKey = ${jsKey}`)
-    this.logger.log(`masterKey = ${masterKey}`)
-    this.logger.log(`serverUrl = ${serverUrl}`)
+    this.logger.log(`serverUrl = ${serverUrl ?? '✗ missing'}`);
+    this.logger.log(`appId = ${appId ? '✓ set' : '✗ missing'}`);
+    this.logger.log(`jsKey = ${jsKey ? '✓ set' : '✗ missing'}`);
+    this.logger.log(`masterKey = ${masterKey ? '✓ set' : '✗ missing'}`);
 
     if (!appId || !jsKey || !masterKey) {
       this.logger.error('Back4app keys are missing in .env file!');
