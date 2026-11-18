@@ -1,8 +1,15 @@
-import { Ctx, Wizard, WizardStep } from 'nestjs-telegraf';
+import { Inject } from '@nestjs/common';
+import { Action, Ctx, On, Wizard, WizardStep } from 'nestjs-telegraf';
 import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
 import { Scene as SceneConst } from '../../telegram-constants';
 import { ExecutorConst } from '../model/executor-const';
+import {
+  handleOrderPhoto,
+  requireExecutorOrder,
+} from '../model/executor-scene-helpers';
+import { IMAGE_STORAGE_SERVICE } from '../../../images/image-storage.constants';
+import type { ImageStorageService } from '../../../images/image-storage.interface';
 import type { ExecutorWizardContext } from '../interfaces/executor-wizard-context.interface';
 
 export interface PhotoSlot {
@@ -20,24 +27,24 @@ const DEFAULT_AFTER_SLOTS: PhotoSlot[] = [
   { key: 'monument', name: 'Monument Close-up', instruction: 'Зробіть крупний план памʼятника.', required: true, minPhotos: 1 },
 ];
 
+/** Кнопки під повідомленням про завантаження фото «після». */
+const AFTER_PHOTO_BUTTONS = [
+  [Markup.button.callback(ExecutorConst.GoSubmitButton, 'executor_go_submit')],
+  [Markup.button.callback(ExecutorConst.BackToSelfcheck, 'executor_back_to_selfcheck')],
+];
+
 @Wizard(SceneConst.AFTER_PHOTOS_SCENE)
 export class AfterPhotosScene {
-  constructor(private readonly ordersService: OrdersService) {}
+  constructor(
+    private readonly ordersService: OrdersService,
+    @Inject(IMAGE_STORAGE_SERVICE)
+    private readonly imageStorage: ImageStorageService,
+  ) {}
 
   @WizardStep(1)
   async stepAfterPhotos(@Ctx() ctx: ExecutorWizardContext) {
-    const orderId = ctx.session?.orderId ?? ctx.wizard?.state?.orderId;
-    if (!orderId) {
-      await ctx.reply(ExecutorConst.OrderNotFound);
-      return ctx.scene.leave();
-    }
-
-    const executorId = ctx.from?.id.toString() ?? '';
-    const order = (await this.ordersService.findByExecutorId(executorId)).find((o: any) => o.id === orderId);
-    if (!order) {
-      await ctx.reply(ExecutorConst.OrderNotFoundSimple);
-      return ctx.scene.leave();
-    }
+    const order = await requireExecutorOrder(ctx, this.ordersService);
+    if (!order) return;
 
     const slots = ((order.service as any)?.photoSlots as PhotoSlot[] | undefined) ?? DEFAULT_AFTER_SLOTS;
     const beforePhotos: string[] = order.report?.photosBefore ?? [];
@@ -57,10 +64,35 @@ export class AfterPhotosScene {
     await ctx.reply(msg, { parse_mode: 'HTML' });
 
     await ctx.reply(ExecutorConst.PhotoUploadAfter, {
-      reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback(ExecutorConst.GoSubmitButton, 'executor_go_submit')],
-        [Markup.button.callback(ExecutorConst.BackToSelfcheck, 'executor_back_to_selfcheck')],
-      ]).reply_markup,
+      reply_markup: Markup.inlineKeyboard(AFTER_PHOTO_BUTTONS).reply_markup,
     });
+  }
+
+  /**
+   * Обробка надісланого фото «після».
+   * Фото завантажується з Telegram, зберігається на диск через ImageStorageService,
+   * а в БД (Back4app) записується лише відносний шлях.
+   */
+  @On('photo')
+  async onAfterPhoto(@Ctx() ctx: ExecutorWizardContext) {
+    await handleOrderPhoto(
+      ctx,
+      this.imageStorage,
+      this.ordersService,
+      'after',
+      AFTER_PHOTO_BUTTONS,
+    );
+  }
+
+  @Action('executor_go_submit')
+  async onGoSubmit(@Ctx() ctx: ExecutorWizardContext) {
+    await ctx.answerCbQuery?.();
+    return ctx.scene.enter(SceneConst.SUBMIT_SCENE);
+  }
+
+  @Action('executor_back_to_selfcheck')
+  async onBackToSelfcheck(@Ctx() ctx: ExecutorWizardContext) {
+    await ctx.answerCbQuery?.();
+    return ctx.scene.enter(SceneConst.FINAL_SELFCHECK_SCENE);
   }
 }

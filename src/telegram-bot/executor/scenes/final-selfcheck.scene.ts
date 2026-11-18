@@ -1,8 +1,9 @@
-import { Ctx, Wizard, WizardStep } from 'nestjs-telegraf';
+import { Action, Ctx, Wizard, WizardStep } from 'nestjs-telegraf';
 import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
 import { Scene as SceneConst } from '../../telegram-constants';
 import { ExecutorConst } from '../model/executor-const';
+import { requireExecutorOrder } from '../model/executor-scene-helpers';
 import type { ExecutorWizardContext } from '../interfaces/executor-wizard-context.interface';
 
 export interface ChecklistStep {
@@ -20,18 +21,8 @@ export class FinalSelfcheckScene {
 
   @WizardStep(1)
   async stepSelfcheck(@Ctx() ctx: ExecutorWizardContext) {
-    const orderId = ctx.session?.orderId ?? ctx.wizard?.state?.orderId;
-    if (!orderId) {
-      await ctx.reply(ExecutorConst.OrderNotFound);
-      return ctx.scene.leave();
-    }
-
-    const executorId = ctx.from?.id.toString() ?? '';
-    const order = (await this.ordersService.findByExecutorId(executorId)).find((o: any) => o.id === orderId);
-    if (!order) {
-      await ctx.reply(ExecutorConst.OrderNotFoundSimple);
-      return ctx.scene.leave();
-    }
+    const order = await requireExecutorOrder(ctx, this.ordersService);
+    if (!order) return;
 
     const steps: ChecklistStep[] = ((order as any).checklist as any)?.steps ?? [];
     const requiredSteps = steps.filter(s => s.required);
@@ -49,5 +40,19 @@ export class FinalSelfcheckScene {
         [Markup.button.callback(ExecutorConst.BackToChecklist, 'executor_back_to_checklist')],
       ]).reply_markup,
     });
+  }
+
+  /** Підтвердження self-check → перехід до фото «після». */
+  @Action('executor_confirm_selfcheck')
+  async onConfirmSelfcheck(@Ctx() ctx: ExecutorWizardContext) {
+    await ctx.answerCbQuery?.();
+    return ctx.scene.enter(SceneConst.AFTER_PHOTOS_SCENE);
+  }
+
+  /** Назад до чекліста. */
+  @Action('executor_back_to_checklist')
+  async onBackToChecklist(@Ctx() ctx: ExecutorWizardContext) {
+    await ctx.answerCbQuery?.();
+    return ctx.scene.enter(SceneConst.SERVICE_CHECKLIST_SCENE);
   }
 }

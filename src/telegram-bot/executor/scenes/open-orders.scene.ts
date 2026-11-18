@@ -1,4 +1,4 @@
-import { Ctx, Wizard, WizardStep } from 'nestjs-telegraf';
+import { Action, Ctx, Wizard, WizardStep } from 'nestjs-telegraf';
 import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
 import { Scene as SceneConst } from '../../telegram-constants';
@@ -56,5 +56,29 @@ export class OpenOrdersScene {
       await ctx.reply(ExecutorConst.OpenOrdersError);
       await ctx.scene.leave();
     }
+  }
+
+  /** Перегляд замовлення → картка деталей. */
+  @Action(/^executor_view_order_(.+)$/)
+  async onViewOrder(@Ctx() ctx: ExecutorWizardContext) {
+    const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
+    await ctx.answerCbQuery?.();
+    if (!orderId) return;
+
+    ctx.session = ctx.session || {};
+    ctx.session.orderId = orderId;
+    return ctx.scene.enter(SceneConst.ORDER_DETAILS_SCENE);
+  }
+
+  /** Взяти замовлення → сцена прийняття. */
+  @Action(/^executor_accept_order_(.+)$/)
+  async onAcceptOrder(@Ctx() ctx: ExecutorWizardContext) {
+    const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
+    await ctx.answerCbQuery?.();
+    if (!orderId) return;
+
+    ctx.session = ctx.session || {};
+    ctx.session.orderId = orderId;
+    return ctx.scene.enter(SceneConst.ACCEPT_ORDER_SCENE);
   }
 }

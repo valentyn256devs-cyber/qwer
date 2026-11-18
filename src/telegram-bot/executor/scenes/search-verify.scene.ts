@@ -1,9 +1,10 @@
-import { Ctx, Wizard, WizardStep } from 'nestjs-telegraf';
+import { Action, Ctx, Wizard, WizardStep } from 'nestjs-telegraf';
 import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
 import { BurialsService } from '../../../burials/burials.service';
 import { Scene as SceneConst } from '../../telegram-constants';
 import { ExecutorConst } from '../model/executor-const';
+import { requireExecutorOrder } from '../model/executor-scene-helpers';
 import type { ExecutorWizardContext } from '../interfaces/executor-wizard-context.interface';
 
 @Wizard(SceneConst.SEARCH_VERIFY_SCENE)
@@ -15,18 +16,8 @@ export class SearchVerifyScene {
 
   @WizardStep(1)
   async stepSearchVerify(@Ctx() ctx: ExecutorWizardContext) {
-    const orderId = ctx.session?.orderId ?? ctx.wizard?.state?.orderId;
-    if (!orderId) {
-      await ctx.reply(ExecutorConst.OrderNotFound);
-      return ctx.scene.leave();
-    }
-
-    const executorId = ctx.from?.id.toString() ?? '';
-    const order = (await this.ordersService.findByExecutorId(executorId)).find((o: any) => o.id === orderId);
-    if (!order) {
-      await ctx.reply(ExecutorConst.OrderNotFoundSimple);
-      return ctx.scene.leave();
-    }
+    const order = await requireExecutorOrder(ctx, this.ordersService);
+    if (!order) return;
 
     const burial = order.details?.burialId
       ? await this.burialsService.findBurialById(order.details.burialId).catch(() => undefined)
@@ -54,5 +45,12 @@ export class SearchVerifyScene {
         ]).reply_markup,
       },
     );
+  }
+
+  /** Підтвердження прибуття → перехід до фото «до». */
+  @Action('executor_arrived')
+  async onArrived(@Ctx() ctx: ExecutorWizardContext) {
+    await ctx.answerCbQuery?.();
+    return ctx.scene.enter(SceneConst.BEFORE_PHOTOS_SCENE);
   }
 }

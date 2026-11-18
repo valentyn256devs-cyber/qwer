@@ -1,4 +1,4 @@
-import { Update, Hears, Command, Ctx, Start, Action, On } from 'nestjs-telegraf';
+import { Action, Command, Ctx, Hears, On, Start, Update } from 'nestjs-telegraf';
 import { Markup } from 'telegraf';
 import type { SceneContext } from 'telegraf/scenes';
 import { OrdersService } from '../../orders/orders.service';
@@ -9,7 +9,7 @@ import {
   ExecutorInabilityReasonLabels,
   ExecutorInabilityReasonsRequiringComment,
 } from '../../orders/models/order-status';
-import { ExecutorMenu, executorMainMenuButtons, Scene } from '../telegram-constants';
+import { executorMainMenuButtons, ExecutorMenu, Scene } from '../telegram-constants';
 import { ExecutorConst } from './model/executor-const';
 
 /** Req 48: Help / Report problem reasons (no status change) */
@@ -28,7 +28,8 @@ export class TelegramExecutorListener {
   constructor(
     private readonly ordersService: OrdersService,
     private readonly performersService: PerformersService,
-  ) {}
+  ) {
+  }
 
   @Start()
   async onStart(@Ctx() ctx: any) {
@@ -91,10 +92,7 @@ export class TelegramExecutorListener {
             parse_mode: 'HTML',
           })
           .catch(() => null);
-        return;
-      }
-      // Якщо цей самий виконавець уже підтвердив — просто оновлюємо повідомлення
-      if (currentExecutor === executorId) {
+      } else if (currentExecutor === executorId) { // Якщо цей самий виконавець уже підтвердив — просто оновлюємо повідомлення
         await ctx
           .editMessageText(ExecutorConst.NewOrderConfirmedByMe(orderId), {
             parse_mode: 'HTML',
@@ -110,24 +108,12 @@ export class TelegramExecutorListener {
       await this.ordersService.assignExecutor(orderId, executorId, 'executor_bot');
       // Сповіщаємо адміністратора, що виконавець підтвердив замовлення
       await this.ordersService.notifyAdminAboutExecutorConfirm(orderId, executorId);
-      await ctx
-        .editMessageText(ExecutorConst.NewOrderConfirmedByMe(orderId), {
-          parse_mode: 'HTML',
-        })
-        .catch(() => null);
-    } catch (error: any) {
-      const message = (error as Error).message ?? '';
-      const isConflict =
-        message.includes('вже прийняте') || message.includes('уже взято');
-      if (isConflict) {
-        await ctx
-          .editMessageText(ExecutorConst.NewOrderTakenByOther(orderId), {
-            parse_mode: 'HTML',
-          })
-          .catch(() => null);
-      } else {
-        await ctx.reply(ExecutorConst.NewOrderConfirmError).catch(() => null);
-      }
+      await ctx.editMessageText(ExecutorConst.NewOrderConfirmedByMe(orderId), {
+        parse_mode: 'HTML',
+      }).catch(() => null);
+    } catch {
+      // Перед перевірка вже обробила конфлікт — тут просто показуємо загальну помилку
+      await ctx.reply(ExecutorConst.NewOrderConfirmError).catch(() => null);
     }
   }
 
@@ -240,27 +226,6 @@ export class TelegramExecutorListener {
     });
   }
 
-  private async submitProblem(ctx: any, p: any) {
-    const executorId = ctx.from?.id?.toString?.() ?? '';
-    try {
-      await this.ordersService.reportExecutorProblem({
-        orderId: p.orderId,
-        executorId,
-        reason: p.reason,
-        comment: p.comment,
-        photoFileIds: p.photoFileIds || [],
-      });
-      ctx.session.executorProblem = null;
-      await ctx.reply(ExecutorConst.ProblemSentSuccess, {
-        reply_markup: executorMainMenuButtons,
-      });
-    } catch (e: any) {
-      await ctx.reply(`❌ ${e?.message ?? ExecutorConst.SendErrorMessage}`, {
-        reply_markup: executorMainMenuButtons,
-      });
-    }
-  }
-
   @Action('executor_back_to_menu')
   async onBackToMenu(@Ctx() ctx: any) {
     await ctx.answerCbQuery?.();
@@ -270,13 +235,13 @@ export class TelegramExecutorListener {
     await ctx.reply(ExecutorConst.Welcome, { reply_markup: executorMainMenuButtons });
   }
 
-  // ==================== Req 48: Help / Problem flow (no status change) ====================
-
   @Action('executor_report_problem_pick')
   async onReportProblemPick(@Ctx() ctx: any) {
     await ctx.answerCbQuery?.();
     await ctx.reply(ExecutorConst.ReportProblemPickHint);
   }
+
+  // ==================== Req 48: Help / Problem flow (no status change) ====================
 
   @Action(/^executor_report_problem_(.+)$/)
   async onReportProblem(@Ctx() ctx: any) {
@@ -301,7 +266,13 @@ export class TelegramExecutorListener {
     const reason = PROBLEM_REASONS[idx] ?? 'Інше';
     await ctx.answerCbQuery?.();
     ctx.session = ctx.session || {};
-    ctx.session.executorProblem = { ...(ctx.session.executorProblem || {}), orderId, reason, step: 'comment', photoFileIds: [] };
+    ctx.session.executorProblem = {
+      ...(ctx.session.executorProblem || {}),
+      orderId,
+      reason,
+      step: 'comment',
+      photoFileIds: []
+    };
     await ctx.reply(ExecutorConst.ProblemCommentPrompt, {
       reply_markup: Markup.inlineKeyboard([[Markup.button.callback(ExecutorConst.CancelButton, 'executor_back_to_menu')]]).reply_markup,
     });
@@ -330,6 +301,27 @@ export class TelegramExecutorListener {
   @Action(/^executor_propose_update/)
   async onPlaceholderActions(@Ctx() ctx: any) {
     await ctx.answerCbQuery?.(ExecutorConst.PlaceholderActionHint);
+  }
+
+  private async submitProblem(ctx: any, p: any) {
+    const executorId = ctx.from?.id?.toString?.() ?? '';
+    try {
+      await this.ordersService.reportExecutorProblem({
+        orderId: p.orderId,
+        executorId,
+        reason: p.reason,
+        comment: p.comment,
+        photoFileIds: p.photoFileIds || [],
+      });
+      ctx.session.executorProblem = null;
+      await ctx.reply(ExecutorConst.ProblemSentSuccess, {
+        reply_markup: executorMainMenuButtons,
+      });
+    } catch (e: any) {
+      await ctx.reply(`❌ ${e?.message ?? ExecutorConst.SendErrorMessage}`, {
+        reply_markup: executorMainMenuButtons,
+      });
+    }
   }
 
   private async submitInability(ctx: any, orderId: string, reason: ExecutorInabilityReason, comment?: string) {

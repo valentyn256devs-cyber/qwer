@@ -1,10 +1,11 @@
-import { Ctx, Wizard, WizardStep } from 'nestjs-telegraf';
+import { Action, Ctx, Wizard, WizardStep } from 'nestjs-telegraf';
 import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
 import { BurialsService } from '../../../burials/burials.service';
 import { OrderStatus } from '../../../orders/models/order-status';
 import { Scene as SceneConst } from '../../telegram-constants';
 import { ExecutorConst } from '../model/executor-const';
+import { requireExecutorOrder } from '../model/executor-scene-helpers';
 import type { ExecutorWizardContext } from '../interfaces/executor-wizard-context.interface';
 
 @Wizard(SceneConst.ORDER_DETAILS_SCENE)
@@ -16,19 +17,8 @@ export class OrderDetailsScene {
 
   @WizardStep(1)
   async stepDetails(@Ctx() ctx: ExecutorWizardContext) {
-    const orderId = ctx.session?.orderId ?? ctx.wizard?.state?.orderId;
-    if (!orderId) {
-      await ctx.reply(ExecutorConst.OrderNotFound);
-      return ctx.scene.leave();
-    }
-
-    const executorId = ctx.from?.id.toString() ?? '';
-
-    const order = (await this.ordersService.findByExecutorId(executorId)).find((o: any) => o.id === orderId);
-    if (!order) {
-      await ctx.reply(ExecutorConst.OrderNotFoundAssigned);
-      return ctx.scene.leave();
-    }
+    const order = await requireExecutorOrder(ctx, this.ordersService);
+    if (!order) return;
 
     const burial = order.details?.burialId
       ? await this.burialsService.findBurialById(order.details.burialId).catch(() => undefined)
@@ -58,7 +48,7 @@ export class OrderDetailsScene {
 
     await ctx.reply(msg, { parse_mode: 'HTML' });
 
-    const actions = buildActions(order.status, orderId);
+    const actions = buildActions(order.status, order.id);
     if (actions.length > 0) {
       await ctx.reply(ExecutorConst.ChooseAction, {
         reply_markup: Markup.inlineKeyboard(actions).reply_markup,
@@ -70,6 +60,31 @@ export class OrderDetailsScene {
         [Markup.button.callback(ExecutorConst.BackToOrders, 'executor_back_to_orders')],
       ]).reply_markup,
     });
+  }
+
+  /** Назад до списку «Мої замовлення». */
+  @Action('executor_back_to_orders')
+  async onBackToOrders(@Ctx() ctx: ExecutorWizardContext) {
+    await ctx.answerCbQuery?.();
+    return ctx.scene.enter(SceneConst.MY_ORDERS_SCENE);
+  }
+
+  /** Почати виконання замовлення. */
+  @Action(/^executor_start_(.+)$/)
+  async onStartExecution(@Ctx() ctx: ExecutorWizardContext) {
+    const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
+    await ctx.answerCbQuery?.();
+    if (!orderId) return;
+
+    const executorId = ctx.from?.id.toString() ?? '';
+    try {
+      await this.ordersService.startExecution(orderId, executorId);
+      await ctx.reply(ExecutorConst.MyOrdersStarted, { parse_mode: 'HTML' });
+      return ctx.scene.enter(SceneConst.SEARCH_VERIFY_SCENE);
+    } catch (error) {
+      await ctx.reply(ExecutorConst.MyOrdersStartError((error as Error).message));
+      return;
+    }
   }
 }
 

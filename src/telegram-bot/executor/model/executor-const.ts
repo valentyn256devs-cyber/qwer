@@ -39,6 +39,10 @@ export const ExecutorConst = {
   SelfcheckButton: '🔍 Фінальна self-check',
   PhotoUploadHint: '📸 Надішліть фото (одне або кілька разом):',
   PhotoUploadAfter: '📸 Надішліть фото «після» (одне або кілька разом):',
+  PhotoSaved: (count: number) =>
+    `✅ Фото збережено (${count}). Надішліть ще або оберіть дію нижче.`,
+  PhotoSaveError: '❌ Не вдалося зберегти фото. Спробуйте надіслати ще раз.',
+  PhotoNotPhoto: '📸 Будь ласка, надішліть саме фото (не текст/файл).',
   HelpPrompt: '🆘 Оберіть причину проблеми...',
   ProblemButton: '📝 Повідомити про проблему',
   CannotCompleteHelpButton: '❌ Не можу виконати замовлення',

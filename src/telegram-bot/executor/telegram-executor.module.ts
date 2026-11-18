@@ -4,6 +4,7 @@ import { OrdersModule } from '../../orders/orders.module';
 import { ServicesModule } from '../../services/services.module';
 import { BurialsModule } from '../../burials/burials.module';
 import { PerformersModule } from '../../performers/performers.module';
+import { ImagesModule } from '../../images/images.module';
 import { OpenOrdersScene } from './scenes/open-orders.scene';
 import { MyOrdersScene } from './scenes/my-orders.scene';
 import { DoneOrdersScene } from './scenes/done-orders.scene';
@@ -19,7 +20,13 @@ import { RevisionScene } from './scenes/revision.scene';
 import { CreatePerformerScene } from '../performer/scene/create-performer.scene';
 
 @Module({
-  imports: [OrdersModule, ServicesModule, BurialsModule, PerformersModule],
+  imports: [
+    OrdersModule,
+    ServicesModule,
+    BurialsModule,
+    PerformersModule,
+    ImagesModule,
+  ],
   providers: [
     TelegramExecutorListener,
     OpenOrdersScene,

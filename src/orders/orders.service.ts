@@ -281,6 +281,76 @@ export class OrdersService {
   }
 
   /**
+   * Додає ОДИН шлях до локального зображення у масив фото звіту.
+   *
+   * Використовується виконавцем (Telegram-бот): фото спершу зберігається
+   * на диск через ImageStorageService, а в БД (Back4app) потрапляє лише шлях.
+   *
+   * @param id       Order objectId
+   * @param type     'before' | 'after'
+   * @param filePath відносний шлях (напр. `orders/<id>/before/169...-ab.jpg`)
+   */
+  async addReportPhotoPath(
+    id: string,
+    type: 'before' | 'after',
+    filePath: string,
+  ): Promise<void> {
+    const order = await this.getOrderObject(id);
+
+    if (type === 'before') {
+      const current =
+        (order.get(OrderTable.Fields.ReportPhotosBefore) as
+          | string[]
+          | undefined) ?? [];
+      order.set(OrderTable.Fields.ReportPhotosBefore, [...current, filePath]);
+      order.set(OrderTable.Fields.Status, OrderStatus.InProgress);
+    } else {
+      const current =
+        (order.get(OrderTable.Fields.ReportPhotosAfter) as
+          | string[]
+          | undefined) ?? [];
+      order.set(OrderTable.Fields.ReportPhotosAfter, [...current, filePath]);
+      order.set(
+        OrderTable.Fields.Status,
+        OrderStatus.AwaitingClientConfirmation,
+      );
+    }
+
+    await order.save();
+  }
+
+  /**
+   * Додає ОДИН шлях до локального зображення у фото кроку чек-листа.
+   *
+   * Використовується виконавцем (Telegram-бот): фото спершу зберігається
+   * на диск через ImageStorageService, а в БД (Back4app) потрапляє лише шлях.
+   *
+   * @param id       Order objectId
+   * @param stepId   id кроку чек-листа
+   * @param filePath відносний шлях (напр. `orders/<id>/checklist/<stepId>/169...-ab.jpg`)
+   * @returns оновлена кількість фото для цього кроку
+   */
+  async addChecklistPhoto(
+    id: string,
+    stepId: string,
+    filePath: string,
+  ): Promise<number> {
+    const order = await this.getOrderObject(id);
+
+    const current =
+      (order.get(OrderTable.Fields.ChecklistPhotos) as
+        | Record<string, string[]>
+        | undefined) ?? {};
+    const stepPhotos = current[stepId] ?? [];
+    const updated = { ...current, [stepId]: [...stepPhotos, filePath] };
+
+    order.set(OrderTable.Fields.ChecklistPhotos, updated);
+    await order.save();
+
+    return updated[stepId].length;
+  }
+
+  /**
    * ✅ Метод ПІДТВЕРДЖЕННЯ заявки адміном + сповіщення клієнта
    */
   async confirmAndNotify(orderId: string, clientId: string) {
@@ -363,7 +433,7 @@ export class OrdersService {
     const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
     if (!adminChatId) return;
 
-    let performer: any = null;
+    let performer: any;
     try {
       performer = await this.performersService.findByTelegramId(executorTelegramId);
     } catch {
@@ -372,7 +442,7 @@ export class OrdersService {
 
     const fullName =
       performer?.firstName || performer?.lastName
-        ? `${performer.lastName ?? ''} ${performer.firstName ?? ''}`.trim()
+        ? `${performer?.lastName ?? ''} ${performer?.firstName ?? ''}`.trim()
         : '';
     const phone = performer?.phoneNumber ?? '';
 
@@ -482,7 +552,7 @@ export class OrdersService {
   }
 
   async assignExecutor(orderId: string, executorId: string, assignedBy: string) {
-    const query = new Parse.Query(this.orderClassName);
+    // const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
       const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
@@ -1259,9 +1329,14 @@ export class OrdersService {
       | Parse.Object
       | undefined;
 
-    const getUrls = (filesArray: Parse.File[] | undefined): string[] => {
+    const getUrls = (filesArray: (Parse.File | string)[] | undefined): string[] => {
       if (!filesArray) return [];
-      return filesArray.map((file) => file.url());
+      return filesArray.map((file) => {
+        if (typeof file === 'string') {
+          return file; // Already a URL or path string
+        }
+        return file.url(); // Parse.File object
+      });
     };
 
     const status = order.get(OrderTable.Fields.Status) as OrderStatus;

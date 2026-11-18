@@ -14,6 +14,8 @@ export const OrderTable = {
     ClientPhotos: 'clientPhotos',
     ReportPhotosBefore: 'reportPhotosBefore',
     ReportPhotosAfter: 'reportPhotosAfter',
+    /** Фото кроків чек-листа: { [stepId]: string[] } */
+    ChecklistPhotos: 'checklistPhotos',
     AdminComment: 'adminComment',
     BurialId: 'burialId',
 
