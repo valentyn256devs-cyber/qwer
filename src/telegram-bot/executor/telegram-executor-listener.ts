@@ -178,52 +178,34 @@ export class TelegramExecutorListener {
     await this.submitInability(ctx, orderId, reason, undefined);
   }
 
-  @On('text')
-  async onTextForFlows(@Ctx() ctx: any) {
+  @On('photo')
+  async onPhotoForProblem(@Ctx() ctx: any) {
     if (ctx.scene?.current) return;
-    const text = ctx.message?.text?.trim();
-    if (!text) return;
+    const photos = ctx.message?.photo;
+    const fileId = photos?.[photos.length - 1]?.file_id;
+    if (!fileId) return;
 
-    // Req 43: inability comment
-    const pending = ctx.session?.executorInability;
-    if (pending?.orderId && pending?.reason) {
-      const { orderId, reason } = pending;
-      ctx.session.executorInability = null;
-      await this.submitInability(ctx, orderId, reason, text);
-      return;
-    }
-
-    // Req 48: problem comment -> move to photo collection
+    // Photo for problem report
     const prob = ctx.session?.executorProblem;
-    if (prob?.orderId && prob?.step === 'comment') {
-      ctx.session.executorProblem = { ...prob, comment: text, step: 'photos' };
-      await ctx.reply(ExecutorConst.ProblemPhotosPrompt, {
+    if (prob?.orderId && prob?.step === 'photos') {
+      const ids = [...(prob.photoFileIds || []), fileId];
+      ctx.session.executorProblem = { ...prob, photoFileIds: ids };
+      await ctx.reply(ExecutorConst.ProblemPhotoAdded(ids.length), {
         reply_markup: Markup.inlineKeyboard([
           [Markup.button.callback(ExecutorConst.SendButton, 'executor_problem_send')],
-          [Markup.button.callback(ExecutorConst.SkipPhotosButton, 'executor_problem_skip_photos')],
           [Markup.button.callback(ExecutorConst.CancelButton, 'executor_back_to_menu')],
         ]).reply_markup,
       });
       return;
     }
-  }
 
-  @On('photo')
-  async onPhotoForProblem(@Ctx() ctx: any) {
-    if (ctx.scene?.current) return;
-    const prob = ctx.session?.executorProblem;
-    if (!prob?.orderId || prob?.step !== 'photos') return;
-    const photos = ctx.message?.photo;
-    const fileId = photos?.[photos.length - 1]?.file_id;
-    if (!fileId) return;
-    const ids = [...(prob.photoFileIds || []), fileId];
-    ctx.session.executorProblem = { ...prob, photoFileIds: ids };
-    await ctx.reply(ExecutorConst.ProblemPhotoAdded(ids.length), {
-      reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback(ExecutorConst.SendButton, 'executor_problem_send')],
-        [Markup.button.callback(ExecutorConst.CancelButton, 'executor_back_to_menu')],
-      ]).reply_markup,
-    });
+    // Photo for clarification response
+    const clar = ctx.session?.executorClarification;
+    if (clar?.orderId) {
+      clar.photoFileIds = [...(clar.photoFileIds || []), fileId];
+      await ctx.reply(`📸 Фото додано (${clar.photoFileIds.length} шт.). Надішліть ще фото або напишіть коментар, а потім надішліть відповідь через меню або повторно оберіть замовлення у «Моїх замовленнях».`);
+      return;
+    }
   }
 
   @Action('executor_back_to_menu')
@@ -301,6 +283,88 @@ export class TelegramExecutorListener {
   @Action(/^executor_propose_update/)
   async onPlaceholderActions(@Ctx() ctx: any) {
     await ctx.answerCbQuery?.(ExecutorConst.PlaceholderActionHint);
+  }
+
+  // ==================== Executor responds to admin clarification ====================
+
+  @Action(/^executor_respond_clarification_(.+)$/)
+  async onRespondClarification(@Ctx() ctx: any) {
+    const orderId = ctx.match?.[1] ?? '';
+    const executorId = ctx.from?.id?.toString() ?? '';
+    await ctx.answerCbQuery?.();
+    if (!orderId || !executorId) return;
+
+    ctx.session = ctx.session || {};
+    ctx.session.executorClarification = { orderId, photoFileIds: [] };
+
+    await ctx.reply(
+      `❓ <b>Відповідь на уточнення адміністратора (замовлення №${orderId})</b>\n\n` +
+      `Надішліть коментар та/або фото як відповідь на уточнення.`,
+      { parse_mode: 'HTML' },
+    );
+  }
+
+  @Action(/^executor_go_checklist_(.+)$/)
+  async onGoChecklist(@Ctx() ctx: any) {
+    const orderId = ctx.match?.[1] ?? '';
+    await ctx.answerCbQuery?.();
+    if (!orderId) return;
+    return ctx.scene.enter(Scene.SERVICE_CHECKLIST_SCENE);
+  }
+
+  @On('text')
+  async onTextForFlows(@Ctx() ctx: any) {
+    if (ctx.scene?.current) return;
+    const text = ctx.message?.text?.trim();
+    if (!text) return;
+
+    // Req 43: inability comment
+    const pending = ctx.session?.executorInability;
+    if (pending?.orderId && pending?.reason) {
+      const { orderId, reason } = pending;
+      ctx.session.executorInability = null;
+      await this.submitInability(ctx, orderId, reason, text);
+      return;
+    }
+
+    // Req 48: problem comment -> move to photo collection
+    const prob = ctx.session?.executorProblem;
+    if (prob?.orderId && prob?.step === 'comment') {
+      ctx.session.executorProblem = { ...prob, comment: text, step: 'photos' };
+      await ctx.reply(ExecutorConst.ProblemPhotosPrompt, {
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback(ExecutorConst.SendButton, 'executor_problem_send')],
+          [Markup.button.callback(ExecutorConst.SkipPhotosButton, 'executor_problem_skip_photos')],
+          [Markup.button.callback(ExecutorConst.CancelButton, 'executor_back_to_menu')],
+        ]).reply_markup,
+      });
+      return;
+    }
+
+    // Executor clarification response (text)
+    const clar = ctx.session?.executorClarification;
+    if (clar?.orderId) {
+      const executorId = ctx.from?.id?.toString() ?? '';
+      clar.comment = text;
+      try {
+        await this.ordersService.respondToAdminClarification(
+          clar.orderId,
+          executorId,
+          clar.comment,
+          clar.photoFileIds,
+        );
+        ctx.session.executorClarification = null;
+        await ctx.reply(
+          `✅ Вашу відповідь на уточнення надіслано адміністратору (замовлення №${clar.orderId}).`,
+          { reply_markup: executorMainMenuButtons },
+        );
+      } catch (e: any) {
+        await ctx.reply(`❌ ${e?.message ?? 'Помилка надсилання відповіді.'}`, {
+          reply_markup: executorMainMenuButtons,
+        });
+      }
+      return;
+    }
   }
 
   private async submitProblem(ctx: any, p: any) {

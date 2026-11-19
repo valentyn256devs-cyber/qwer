@@ -64,5 +64,18 @@ export const OrderTable = {
     ClientConfirmedAt: 'clientConfirmedAt',
     ClientConfirmedBy: 'clientConfirmedBy',
     ClientConfirmationResponse: 'clientConfirmationResponse',
+
+    // Admin confirmation of executor assignment (legacy, kept for backward compatibility)
+    AdminConfirmedAt: 'adminConfirmedAt',
+    AdminConfirmedBy: 'adminConfirmedBy',
+    AdminConfirmationResponse: 'adminConfirmationResponse',
+
+    // Admin confirmation of before photos
+    BeforePhotosConfirmedAt: 'beforePhotosConfirmedAt',
+    BeforePhotosConfirmedBy: 'beforePhotosConfirmedBy',
+    BeforePhotosConfirmationResponse: 'beforePhotosConfirmationResponse',
+
+    // Submission for completion review
+    SubmissionComment: 'submissionComment',
   },
 } as const;

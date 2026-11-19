@@ -1,0 +1,1089 @@
+Doglyad+ — ТЗ на розробку Executor Bot та розширення lifecycle замовлення
+1. Мета етапу
+Розробити окремий Telegram-бот для виконавця послуг Doglyad+, через який виконавець зможе:
+бачити доступні для виконання замовлення;
+брати замовлення в роботу;
+отримувати повну інформацію про замовлення та місце памʼяті;
+проходити покроковий чекліст виконання конкретної послуги;
+завантажувати фото до та після виконання;
+запитувати уточнення;
+пропонувати актуалізацію даних «Місця памʼяті»;
+повідомляти про неможливість виконання;
+відправляти виконану роботу адміністратору на перевірку;
+отримувати замовлення назад на доопрацювання.
+У рамках цього етапу також необхідно розширити існуючі:
+Client Bot;
+Admin Bot;
+backend-логіку замовлень;
+модель статусів;
+систему чеклістів;
+систему дедлайнів;
+систему історії змін.
+
+2. Ролі
+2.1. Client
+Клієнт:
+створює замовлення;
+використовує існуюче «Місце памʼяті» або створює нове;
+може скасувати замовлення відповідно до правил;
+отримує фото знайденого поховання;
+підтверджує правильність поховання;
+може запросити уточнення;
+може погодити або відхилити зміни «Місця памʼяті»;
+отримує фінальний звіт після перевірки адміністратором.
+
+2.2. Admin
+Адміністратор:
+перевіряє нові замовлення;
+підтверджує або відхиляє замовлення;
+запитує уточнення у клієнта;
+бачить відкриті та активні замовлення;
+контролює виконавців;
+може зняти замовлення з виконавця;
+може перепризначити замовлення;
+може забрати замовлення на себе;
+контролює дедлайни;
+погоджує зміни «Місця памʼяті»;
+перевіряє фінальний звіт;
+підтверджує виконання;
+повертає роботу на доопрацювання;
+приймає рішення щодо скасування після початку виконання.
+
+2.3. Executor
+Виконавець:
+бачить доступні замовлення;
+може взяти одне із замовлень;
+виконує замовлення відповідно до анкети/чекліста;
+підтверджує знаходження поховання;
+робить фото «до»;
+отримує підтвердження клієнта;
+виконує роботи;
+робить фото «після»;
+додає коментар;
+відправляє роботу адміністратору;
+виконує доопрацювання;
+може запросити уточнення;
+може запропонувати зміни «Місця памʼяті»;
+може повідомити, що не може виконати замовлення.
+вказує орієнтовну дату виконання замовлення
+Виконавець не може самостійно скасувати замовлення.
+
+3. Lifecycle замовлення
+3.1. Основні статуси
+New — Нова
+Замовлення створене клієнтом, але ще не передане на перевірку адміністратору.
+
+AwaitingAdminReview — Очікує перевірки адміністратором
+Замовлення передане адміністратору.
+Адміністратор може:
+підтвердити;
+відхилити;
+запросити уточнення.
+
+Confirmed — Підтверджено
+Адміністратор підтвердив можливість виконання замовлення.
+Після цього система повинна зробити замовлення доступним виконавцям.
+
+AvailableForExecutor — Доступне виконавцям
+Замовлення відображається у списку відкритих замовлень Executor Bot.
+
+Assigned — Призначено виконавцю
+Один із виконавців забрав замовлення.
+Замовлення повинно автоматично зникнути зі списку доступних замовлень інших виконавців.
+
+AwaitingClientConfirmation — Очікує підтвердження клієнта
+Виконавець:
+знайшов поховання;
+перевірив основні дані;
+завантажив необхідні фото «до»;
+відправив результат клієнту.
+До підтвердження клієнтом виконання основної послуги не починається. - Поки не блокуючий статус.
+
+InProgress — В роботі
+Клієнт підтвердив правильність поховання.
+Виконавець проходить основний Service Checklist.
+
+AwaitingCompletionReview — Очікує перевірки виконання
+Виконавець:
+завершив чекліст;
+пройшов фінальну self-check перевірку;
+завантажив фото «після»;
+додав коментар за потреби;
+натиснув «Надіслати на перевірку».
+Замовлення очікує рішення адміністратора. 
+
+RevisionRequired — Повернено на доопрацювання
+Адміністратор не прийняв результат та вказав недоліки.
+Замовлення повертається виконавцю.
+
+Done — Виконано
+Фінальний статус.
+Встановлюється тільки після підтвердження адміністратором.
+Після переходу у Done:
+фінальний звіт надсилається клієнту;
+замовлення потрапляє в історію виконаних;
+активна робота з ним завершується.
+
+Rejected — Відхилено
+Замовлення відхилено адміністратором до початку виконання.
+
+Canceled — Скасовано
+Замовлення було скасовано відповідно до правил cancellation flow.
+
+OnHold — Призупинено
+Опціональний службовий статус для ситуацій, коли виконання тимчасово неможливе.
+Наприклад:
+кладовище закрите;
+погодні умови;
+тимчасово немає доступу;
+інші форс-мажорні обставини.
+
+4. Pending Clarification
+PendingClarification не рекомендується використовувати як єдиний основний статус замовлення.
+Уточнення повинно бути окремою сутністю:
+ClarificationRequest
+Поля:
+id;
+orderId;
+createdBy;
+recipient;
+question;
+answer;
+createdAt;
+answeredAt;
+status.
+Можливі статуси:
+AwaitingResponse;
+Answered;
+Canceled.
+Замовлення при цьому зберігає свій основний статус.
+Наприклад:
+Order status = InProgress
+Clarification = AwaitingResponse
+
+Таким чином після відповіді клієнта не виникає питання, в який статус потрібно повернути замовлення.
+
+5. Загальний flow
+New
+ ↓
+AwaitingAdminReview
+ ├── Rejected
+ ├── Clarification Request
+ ↓
+Confirmed
+ ↓
+AvailableForExecutor
+ ↓
+Assigned
+ ↓
+Search / Verify Grave
+ ↓
+Before Photos
+ ↓
+AwaitingClientConfirmation
+ ↓
+Client confirms
+ ↓
+InProgress
+ ↓
+Service Checklist
+ ↓
+Final Self-check
+ ↓
+After Photos
+ ↓
+AwaitingCompletionReview
+ ├── RevisionRequired
+ │       ↓
+ │    InProgress
+ │       ↓
+ │    AwaitingCompletionReview
+ ↓
+Done
+
+
+6. Executor Bot — структура
+Головне меню:
+Відкриті замовлення
+Мої замовлення
+Виконані
+Допомога / Проблема
+
+7. Відкриті замовлення
+У розділі відображаються замовлення зі статусом:
+AvailableForExecutor
+Для кожного замовлення показати:
+Order ID;
+назву послуги;
+адресу / кладовище;
+населений пункт;
+бажану дату виконання;
+execution deadline;
+час до deadline;
+короткий опис;
+наявність додаткових послуг.
+Дії:
+Переглянути;
+Взяти замовлення.
+
+8. Прийняття замовлення
+Після натискання:
+Взяти замовлення
+backend повинен атомарно перевірити:
+status == AvailableForExecutor
+assignedExecutorId == null
+
+Якщо замовлення вільне:
+assignedExecutorId = currentExecutorId
+status = Assigned
+
+Якщо інший виконавець уже забрав замовлення:
+Замовлення вже було прийняте іншим виконавцем.
+Не допускається ситуація, коли одне замовлення одночасно отримують два виконавці.
+
+9. Моє замовлення — деталі
+Виконавець повинен бачити:
+Order
+Order ID;
+послугу;
+список додаткових послуг;
+дату;
+deadline;
+статус;
+коментар клієнта.
+Client
+Показувати тільки інформацію, необхідну для виконання.
+Memory Place
+ПІБ;
+кладовище;
+сектор;
+ряд;
+номер місця;
+GPS;
+опис;
+орієнтири;
+фотографії;
+додаткові дані.
+Actions
+Залежно від поточного етапу:
+Почати;
+Запропонувати оновлення Memory Place;
+Запросити уточнення;
+Повідомити про проблему;
+Не можу виконати замовлення.
+
+10. Етап пошуку поховання
+Після початку роботи виконавець отримує інструкцію:
+Step 1 — Прибути на місце
+Підтвердити прибуття.
+
+Step 2 — Знайти поховання
+Відобразити інформацію Memory Place.
+Кнопка:
+Знайдено
+
+Step 3 — Перевірити правильність
+Приклад чекліста:
+ПІБ співпадає.
+Памʼятник / фотографія співпадає.
+Місцезнаходження відповідає даним.
+Додаткові орієнтири відповідають.
+Кнопка:
+Підтверджую правильність поховання
+Якщо дані не співпадають:
+Інформація потребує оновлення
+
+11. Фото «до»
+Кількість та тип фотографій повинні задаватися конфігурацією послуги.
+Приклад:
+загальний вигляд спереду;
+вигляд зліва;
+вигляд справа;
+памʼятник крупним планом.
+Для кожного photo slot має бути:
+назва;
+коротка інструкція;
+optional reference/guide image;
+required / optional;
+мінімальна кількість фото.
+Не дозволяти перейти далі, поки всі required slots не заповнені.
+
+12. Підтвердження клієнтом
+Після завершення фото «до»:
+Assigned → AwaitingClientConfirmation
+Client Bot отримує:
+дані замовлення;
+фото;
+повідомлення про те, що поховання знайдено.
+Кнопки:
+Так, це правильне поховання
+Потрібне уточнення
+Додати послугу
+Після підтвердження:
+AwaitingClientConfirmation → InProgress
+
+13. Додаткові послуги
+На етапі перегляду фото «до» клієнту може бути запропоновано додати додаткову послугу.
+Наприклад:
+квіти;
+лампадка;
+додаткове очищення;
+фарбування;
+інша доступна послуга.
+Додавання додаткової послуги повинно:
+бути прив'язане до поточного Order;
+відображатися адміну;
+відображатися виконавцю;
+за потреби додавати додаткові steps у checklist.
+Платіжна бізнес-логіка додаткових послуг визначається окремо.
+
+14. Service Execution Checklist
+Кожна послуга повинна мати власний конфігурований checklist.
+Приклад для Basic Cleaning:
+Step 1 — Велике сміття
+Прибрати гілки.
+Прибрати листя.
+Прибрати стороннє сміття.
+Step 2 — Бурʼян
+Видалити бурʼян біля памʼятника.
+Видалити бурʼян біля огорожі.
+Step 3 — Памʼятник
+Очистити від пилу.
+Помити.
+Витерти.
+Step 4 — Територія
+Підмести.
+Прибрати декоративні елементи.
+Перевірити загальний вигляд.
+
+15. Типи Checklist Step
+Система повинна підтримувати щонайменше:
+Instruction;
+Checkbox;
+YesNo;
+Text;
+Comment;
+Photo;
+MultiplePhotos;
+Select;
+Confirmation.
+Для кожного step:
+title;
+description;
+type;
+required;
+order;
+validation;
+guide;
+minPhotos;
+maxPhotos.
+
+16. Snapshot checklist
+При створенні/підтвердженні замовлення повинна зберігатися копія актуальної версії чекліста.
+Редагування master checklist послуги не повинно змінювати вже створене замовлення.
+Потрібна сутність:
+OrderServiceChecklist
+зі своєю версією.
+
+17. Фінальна self-check перевірка
+Після виконання останнього step показати виконавцю весь required checklist.
+Наприклад:
+✅ Велике сміття прибрано.
+✅ Бурʼян видалено.
+✅ Памʼятник помито.
+✅ Територія прибрана.
+Кнопка:
+Підтверджую, що всі роботи виконані
+Без підтвердження перейти до фінального фото не можна.
+
+18. Фото «після»
+Фото «після» повинні відповідати photo slots «до».
+Наприклад:
+Before: Front View
+After: Front View
+
+Виконавець при створенні After Photo бажано повинен бачити відповідне Before Photo як reference.
+Ціль:
+максимально однаковий ракурс;
+можливість сформувати якісний Before / After report.
+
+19. Завершення виконавцем
+Після фото «після»:
+поле:
+Коментар виконавця
+Необов'язкове.
+Кнопка:
+Надіслати роботу на перевірку
+Після цього:
+InProgress → AwaitingCompletionReview
+Виконавець більше не може редагувати submitted результат, якщо адміністратор не повернув роботу.
+
+20. Admin Completion Review
+Адміністратор бачить:
+Order ID;
+клієнта;
+виконавця;
+послугу;
+checklist;
+completion status;
+фото «до»;
+фото «після»;
+коментар виконавця;
+історію уточнень;
+історію Memory Place updates.
+Кнопки:
+Підтвердити
+Повернути на доопрацювання
+
+21. Повернення на доопрацювання
+При натисканні:
+Повернути на доопрацювання
+адміністратор зобов'язаний вказати:
+опис недоліків.
+Опціонально:
+конкретні checklist steps;
+конкретні фотографії, які потрібно переробити.
+Статус:
+AwaitingCompletionReview → RevisionRequired
+Executor Bot отримує:
+список недоліків;
+коментар адміністратора;
+кнопку Продовжити роботу.
+Після виправлення:
+RevisionRequired → AwaitingCompletionReview
+Цикл може повторюватися декілька разів.
+Вся історія revisions повинна зберігатися.
+
+22. Фінальне підтвердження
+Після Admin Approve:
+AwaitingCompletionReview → Done
+Система:
+фіксує дату завершення;
+фіксує адміністратора, який прийняв роботу;
+формує клієнтський звіт;
+відправляє звіт у Client Bot.
+
+23. Фінальний звіт клієнту
+Повинен містити:
+назву послуги;
+дату виконання;
+місце;
+фото «до»;
+фото «після»;
+коментар виконавця, якщо він призначений для клієнта;
+результат виконання.
+
+24. Оновлення «Місця памʼяті»
+Виконавець може запропонувати актуалізацію інформації Memory Place.
+Виконавець не може напряму змінити основні дані Memory Place.
+
+25. Memory Place Update Request
+Створити окрему сутність:
+MemoryPlaceUpdateRequest.
+Статуси:
+Draft;
+AwaitingAdminApproval;
+AwaitingClientApproval;
+PendingClarification;
+Approved;
+RejectedByAdmin;
+RejectedByClient.
+
+26. Дані, які можна запропонувати змінити
+Мінімально:
+ПІБ;
+кладовище;
+сектор;
+ряд;
+номер;
+GPS;
+опис;
+орієнтири;
+фото;
+дані памʼятника;
+додаткові примітки.
+
+27. Flow Memory Place Update
+Executor
+ ↓
+Propose Update
+ ↓
+AwaitingAdminApproval
+ ↓
+Admin approves
+ ↓
+AwaitingClientApproval
+ ↓
+Client approves
+ ↓
+Approved
+ ↓
+Memory Place updated
+
+
+28. Admin review Memory Place update
+Адміністратор повинен бачити diff:
+Field
+Current
+Proposed
+Sector
+14
+14
+Row
+6
+7
+GPS
+Old
+New
+Photo
+Old
+New
+
+Дії:
+Погодити;
+Відхилити;
+Запросити уточнення.
+
+29. Client review Memory Place update
+Клієнту показуються тільки запропоновані зміни.
+Дії:
+Підтвердити зміни
+Відхилити
+Уточнити
+Тільки після Client Approval основна Memory Place змінюється.
+
+30. Version History Memory Place
+При кожному Approved update потрібно зберігати:
+previous version;
+new version;
+executor;
+admin;
+client;
+Order ID;
+timestamps.
+Попередні дані не видаляються.
+
+31. Critical та Non-critical Memory Place changes
+Critical
+Наприклад:
+інше поховання;
+інше ПІБ;
+інший сектор;
+інший ряд;
+інший номер;
+суттєво інша GPS location;
+є ризик, що знайдено неправильне поховання.
+Critical Update може блокувати продовження виконання до погодження.
+
+Non-critical
+Наприклад:
+нові фото;
+новий орієнтир;
+уточнений опис;
+точніші координати без зміни фактичного місця.
+Non-critical Update не повинен блокувати основне виконання замовлення.
+
+32. Перепризначення виконавця
+Адміністратор може змінити виконавця до Done.
+В Admin Bot:
+Change Executor
+Unassign Executor
+Take Over
+
+33. Unassign Executor
+Причина обов'язкова.
+Варіанти:
+Illness / unavailable;
+Executor requested reassignment;
+Missed deadline;
+Quality issue;
+Admin decision;
+Other.
+Після Unassign:
+assignedExecutorId = null
+status = AvailableForExecutor
+
+якщо адміністратор не призначив іншого виконавця вручну.
+
+34. Change Executor
+Адмін може вибрати іншого виконавця.
+Новий виконавець отримує:
+Order;
+Memory Place;
+completed checklist steps;
+existing photos;
+comments;
+clarification history;
+revision history;
+Memory Place update history.
+Прогрес не повинен автоматично втрачатися.
+
+35. Take Over
+Адміністратор може сам стати виконавцем замовлення.
+Рекомендована модель:
+один користувач може мати декілька ролей:
+Admin
+Executor
+
+Take Over призначає поточного адміністратора як Executor.
+
+36. Assignment History
+Зберігати окремо:
+OrderAssignmentHistory.
+Поля:
+order;
+executor;
+assignedAt;
+unassignedAt;
+assignedBy;
+unassignedBy;
+reason;
+comment.
+
+37. Строки виконання
+Для Order необхідно додати:
+serviceDateFrom
+Початок бажаного періоду виконання.
+serviceDateTo
+Кінець бажаного періоду.
+executionDeadline
+Кінцевий operational deadline.
+
+38. Відображення deadline виконавцю
+Deadline повинен бути явно видимим:
+Виконати до: 24.08.2026 18:00
+Залишилось: 1 день 4 години
+Відкриті замовлення бажано сортувати за найближчим deadline.
+
+39. Overdue
+Overdue не є окремим Order Status.
+Визначати:
+isOverdue =
+currentTime > executionDeadline
+AND status != Done
+AND status != Canceled
+AND status != Rejected
+
+
+40. Deadline notifications
+Executor
+Нотифікації:
+після призначення;
+за 24 години;
+за 3 години;
+після прострочення.
+Конкретні інтервали бажано винести в конфігурацію.
+
+Admin
+Повідомляти:
+замовлення довго не взято;
+наближається deadline;
+executor не почав виконання;
+deadline пропущено;
+замовлення довго знаходиться у AwaitingClientConfirmation;
+замовлення довго знаходиться у AwaitingCompletionReview.
+
+41. Cancellation — загальні правила
+Необхідно розрізняти:
+безпосереднє скасування;
+запит на скасування.
+
+42. Client Cancellation
+До призначення Executor
+Client може напряму скасувати:
+New;
+AwaitingAdminReview;
+Confirmed;
+AvailableForExecutor.
+Результат:
+→ Canceled
+
+Після призначення Executor
+На статусах:
+Assigned;
+AwaitingClientConfirmation;
+InProgress;
+RevisionRequired;
+клієнт не може напряму завершити Order як Canceled.
+Замість цього:
+Request Cancellation
+Створюється:
+CancellationRequest.
+Адміністратор приймає фінальне рішення.
+
+43. Executor Cancellation
+Executor не може поставити Canceled.
+Дія:
+Не можу виконати замовлення
+Причини:
+Cannot find grave;
+No access;
+Weather conditions;
+Health issue;
+Wrong location;
+Safety issue;
+Missing information;
+Other.
+Обов'язково:
+reason;
+optional/required comment залежно від reason.
+Після цього Admin може:
+перепризначити;
+повернути у Open Orders;
+запросити уточнення;
+поставити On Hold;
+скасувати.
+
+44. Admin Cancellation
+Admin може скасувати замовлення на будь-якому активному етапі до Done.
+При скасуванні:
+обов'язково:
+reason;
+опціонально:
+internal comment;
+comment for client.
+
+45. Cancellation Request
+Поля:
+id
+orderId
+requestedBy
+requestedAt
+reason
+comment
+status
+reviewedBy
+reviewedAt
+decisionComment
+
+Статуси:
+Pending;
+Approved;
+Rejected.
+
+46. Cancellation Audit
+При Canceled зберігати:
+canceledAt
+canceledBy
+cancellationReason
+cancellationComment
+previousStatus
+cancellationRequestId
+
+
+47. Cancellation Matrix
+Order Stage
+Client
+Executor
+Admin
+New
+Cancel
+—
+Cancel
+AwaitingAdminReview
+Cancel
+—
+Cancel
+Confirmed
+Cancel
+—
+Cancel
+AvailableForExecutor
+Cancel
+—
+Cancel
+Assigned
+Request
+Report inability
+Cancel
+AwaitingClientConfirmation
+Request
+Report inability
+Cancel
+InProgress
+Request
+Report inability
+Cancel
+AwaitingCompletionReview
+Request via Admin
+—
+Cancel / Return
+RevisionRequired
+Request
+Report inability
+Cancel
+Done
+No
+No
+No
+
+
+48. Help / Problem flow
+Executor Bot повинен мати окрему кнопку:
+Допомога / Повідомити про проблему
+Причини:
+Не можу знайти поховання.
+Немає доступу.
+Невірна інформація.
+Пошкодження памʼятника.
+Погодні умови.
+Питання по виконанню.
+Інше.
+Після вибору:
+коментар;
+optional photos;
+повідомлення адміністратору.
+Це не повинно автоматично скасовувати або змінювати status Order.
+
+49. Історія статусів
+Створити:
+OrderStatusHistory.
+Для кожного переходу зберігати:
+orderId
+fromStatus
+toStatus
+changedBy
+changedAt
+reason
+comment
+
+
+50. Основні backend entities
+У рамках етапу необхідно передбачити:
+Order
+OrderStatusHistory
+OrderAssignmentHistory
+
+ServiceChecklist
+ServiceChecklistStep
+OrderServiceChecklist
+OrderChecklistAnswer
+
+BeforePhoto
+AfterPhoto
+
+ClarificationRequest
+
+CancellationRequest
+
+MemoryPlace
+MemoryPlaceVersion
+MemoryPlaceUpdateRequest
+
+OrderRevision
+
+
+51. Основні поля Order
+Мінімально:
+id
+
+clientId
+serviceId
+memoryPlaceId
+
+status
+
+assignedExecutorId
+
+serviceDateFrom
+serviceDateTo
+executionDeadline
+
+createdAt
+confirmedAt
+startedAt
+submittedAt
+completedAt
+
+canceledAt
+canceledBy
+cancellationReason
+cancellationComment
+
+
+52. Concurrency requirements
+Критично:
+прийняття Order виконавцем повинно бути атомарною операцією.
+Не допускається:
+подвійний assignment;
+одночасне прийняття різними виконавцями;
+перезапис актуального executor;
+виконання дій зі старої Telegram-кнопки після зміни status.
+Перед кожною critical action backend повинен повторно перевіряти актуальний стан Order.
+
+53. Permissions
+Executor
+Може працювати тільки:
+з Available Orders;
+зі своїми Assigned Orders;
+з Orders, які явно призначені йому.
+Не може:
+редагувати Order напряму;
+підтверджувати власну роботу;
+змінювати Memory Place напряму;
+скасовувати Order;
+призначати іншого Executor.
+
+Admin
+Має доступ до всіх замовлень.
+
+Client
+Має доступ тільки до власних замовлень та власних Memory Places.
+
+54. Notifications
+Необхідно додати нотифікації щонайменше для подій:
+Executor
+нове Available Order;
+Order assigned;
+clarification answered;
+Memory Place update decision;
+Client confirmed grave;
+Client rejected/asked clarification;
+Order returned for revision;
+approaching deadline;
+overdue;
+Order reassigned/unassigned.
+Admin
+new Order;
+Executor accepted Order;
+Executor requested clarification;
+Executor submitted Memory Place Update;
+Executor reported inability;
+cancellation requested;
+work submitted for review;
+deadline risk / overdue.
+Client
+clarification request;
+grave found;
+Memory Place Update proposed;
+cancellation decision;
+final report.
+
+55. Acceptance Criteria — Executor Bot
+Executor може авторизуватися та бути ідентифікований системою.
+Executor бачить тільки доступні та власні замовлення.
+Executor може відкрити деталі Available Order.
+Executor може забрати Available Order.
+Одне замовлення не може бути прийняте двома виконавцями.
+Після assignment Order зникає у інших executors.
+Executor бачить інформацію Memory Place.
+Executor може пройти flow пошуку поховання.
+Executor не може пропустити required checklist step.
+Executor може завантажити required Before Photos.
+Без Before Photos Order не можна передати Client.
+Client confirmation переводить Order у InProgress.
+Executor отримує Service Checklist.
+Checklist залежить від конкретної Service.
+Checklist зберігається як snapshot для Order.
+Executor проходить фінальний self-check.
+Executor завантажує After Photos.
+After Photos прив'язані до відповідних Before Photo slots.
+Executor може додати фінальний comment.
+Executor може submit роботу адміну.
+Executor не може сам поставити Done.
+Executor отримує Revision Request.
+Executor може повторно submit після виправлення.
+Executor може Request Clarification.
+Executor може Report Problem.
+Executor може Report Inability to Complete.
+Executor не може сам скасувати Order.
+
+56. Acceptance Criteria — Admin
+Admin бачить виконавця Order.
+Admin бачить progress checklist.
+Admin бачить Before та After Photos.
+Admin може Approve Completed Work.
+Admin може Return for Revision.
+Revision reason є обов'язковим.
+Admin може Unassign Executor.
+Admin може Change Executor.
+Admin може Take Over.
+Assignment history зберігається.
+Admin бачить deadline.
+Admin отримує overdue notifications.
+Admin може обробити Cancellation Request.
+Admin може Cancel Order.
+Admin може перевірити Memory Place Update.
+Admin бачить diff між старими та новими даними.
+
+57. Acceptance Criteria — Client
+Client отримує Before Photos.
+Client може підтвердити поховання.
+Client може запросити clarification.
+Client може отримати Memory Place Update Request.
+Client бачить конкретний diff.
+Client може Approve Update.
+Client може Reject Update.
+Memory Place змінюється тільки після необхідних approvals.
+Client може напряму Cancel Order до assignment.
+Після assignment Client створює Cancellation Request.
+Client отримує фінальний report тільки після Admin Approval.
+
+58. Audit Requirements
+Система повинна дозволяти встановити:
+хто створив Order;
+хто його підтвердив;
+хто і коли взяв Order;
+хто був Executor раніше;
+хто перепризначив;
+які checklist steps виконані;
+коли вони виконані;
+які фотографії були додані;
+хто запросив clarification;
+хто запропонував Memory Place Update;
+хто його погодив;
+хто його відхилив;
+хто запросив cancellation;
+хто його погодив;
+хто підтвердив фінальну роботу.
+Критичні історичні дані не повинні перезаписуватися без збереження попередньої версії.
+
+59. MVP Scope
+До поточного етапу входить:
+Executor Bot;
+Available Orders;
+My Orders;
+Completed Orders;
+Assignment;
+Execution Checklist;
+Before / After Photos;
+Client Grave Confirmation;
+Admin Completion Review;
+Revision Flow;
+Clarification Flow;
+Executor Reassignment;
+Admin Take Over;
+Execution Deadlines;
+Deadline Notifications;
+Cancellation Flow;
+Executor Problem Reporting;
+Memory Place Update Request;
+Admin Approval Memory Place Update;
+Client Approval Memory Place Update;
+Memory Place Version History;
+Status / Assignment / Revision history.
+
+60. Питання для наступного етапу деталізації
+Перед фінальною оцінкою розробки окремо потрібно погодити:
+Чи виконавець бачить вартість замовлення / свою винагороду.
+Як визначається список виконавців, які бачать конкретне замовлення:
+всі;
+місто;
+кладовище;
+зона;
+тип послуги.
+Чи може Executor мати декілька активних Orders одночасно.
+Чи є максимальна кількість активних Orders.
+Хто визначає executionDeadline.
+Чи може Admin змінити deadline після підтвердження.
+Скільки часу Executor має на прийняття / старт Order.
+Що робити, якщо Client довго не підтверджує знайдене поховання.
+Чи впливає очікування Client на SLA Executor.
+Фінансова логіка Cancellation після виїзду / частково виконаної роботи.
+Чи можна додавати додаткові Services після початку виконання та як це впливає на оплату.
+Які конкретно поля Memory Place вважаються Critical.
+Чи всі Memory Place Updates повинні проходити Admin + Client approval, чи для частини змін достатньо Admin Approval.
+Чи потрібна геолокація Executor під час виконання.
+Чи потрібно фіксувати час початку та завершення кожного checklist step.
+Чи потрібно автоматично формувати PDF/інший окремий формат фінального звіту, чи достатньо повідомлення у Client Bot.
+

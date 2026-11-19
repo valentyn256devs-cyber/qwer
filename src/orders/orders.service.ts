@@ -22,6 +22,7 @@ import { ExecutorConst } from '../telegram-bot/executor/model/executor-const';
 import { Context, Telegraf } from 'telegraf';
 import { PerformersService } from '../performers/performers.service';
 import { BurialsService } from '../burials/burials.service';
+import { ImageModelTable } from '../images/models/image-model-table';
 
 export interface ChecklistStep {
   id: string;
@@ -85,6 +86,34 @@ export class OrdersService {
     private readonly performersService: PerformersService,
     private readonly burialsService: BurialsService,
   ) {
+  }
+
+  /**
+   * Отримує буфер зображення за ім'ям файлу (OriginalName), збереженим у таблиці ImageModel.
+   * Зображення зберігаються як Base64 рядок (data:image/jpeg;base64,...).
+   */
+  private async getImageBuffer(filePath: string): Promise<Buffer | null> {
+    if (!filePath) return null;
+    try {
+      const Parse = this.back4app.parse;
+      const query = new Parse.Query(ImageModelTable.TableName);
+      query.equalTo(ImageModelTable.Fields.OriginalName, filePath);
+      const result = await query.first(); //{ useMasterKey: true });
+      if (!result) {
+        console.error(`Зображення не знайдено в ImageModel: ${filePath}`);
+        return null;
+      }
+      const base64String = result.get(ImageModelTable.Fields.Base64Data) as string;
+      if (!base64String) {
+        console.error(`Base64 дані відсутні для: ${filePath}`);
+        return null;
+      }
+      const base64Data = base64String.split(',')[1] || base64String;
+      return Buffer.from(base64Data, 'base64');
+    } catch (e) {
+      console.error(`Не вдалося отримати зображення ${filePath}:`, e);
+      return null;
+    }
   }
 
   /**
@@ -341,9 +370,6 @@ export class OrdersService {
     if (type === 'before') {
       // Req 12: After before photos, wait for client confirmation
       order.set(OrderTable.Fields.Status, OrderStatus.AwaitingClientConfirmation);
-
-      // Spовіщаємо клієнта про фото «до» та просимо підтвердити поховання
-      await this.notifyClientBeforePhotos(order.id!, order);
     } else {
       order.set(OrderTable.Fields.Status, OrderStatus.AwaitingClientConfirmation);
     }
@@ -541,6 +567,547 @@ export class OrdersService {
     }
   }
 
+  // ==================== Admin confirmation of executor assignment ====================
+
+  /**
+   * Spовіщає адміністратора про те, що виконавець взяв замовлення.
+   * Надсилає номер замовлення, дані виконавця, телефон, фото «до» та кнопки підтвердження/уточнення.
+   */
+  async notifyAdminExecutorAssigned(
+    orderId: string,
+    executorTelegramId: string,
+  ): Promise<void> {
+    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
+    if (!adminChatId) return;
+
+    const order = await this.findById(orderId);
+    if (!order) return;
+
+    let performer: any;
+    try {
+      performer = await this.performersService.findByTelegramId(executorTelegramId);
+    } catch {
+      performer = null;
+    }
+
+    const fullName =
+      performer?.firstName || performer?.lastName
+        ? `${performer?.lastName ?? ''} ${performer?.firstName ?? ''}`.trim()
+        : '';
+    const phone = performer?.phoneNumber ?? '';
+
+    const photosBefore = order.report?.photosBefore ?? [];
+    const photosText = photosBefore.length > 0
+      ? `\n📸 Фото «до» (${photosBefore.length}): ${photosBefore.join(', ')}`
+      : '\n📸 Фото «до»: ще не завантажено';
+
+    const text =
+      `👷 <b>Виконавець взяв замовлення №${orderId}</b>\n\n` +
+      `📌 Послуга: ${order.service?.name ?? '—'}\n` +
+      `👤 Виконавець: ${this.escapeHtml(fullName) || '—'}\n` +
+      `📞 Телефон: ${this.escapeHtml(phone) || '—'}\n` +
+      `🪦 Місце поховання: ${order.details?.burialId ?? '—'}\n` +
+      `💬 Коментар клієнта: ${order.clientComment || '—'}` +
+      photosText +
+      `\n\nПідтвердьте виконавця або запросіть уточнення:`;
+
+    const options = {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '✅ Підтвердити виконавця', callback_data: `admin_confirm_executor_${orderId}` },
+            { text: '❓ Уточнити', callback_data: `admin_clarify_executor_${orderId}` },
+          ],
+        ],
+      },
+    };
+
+    try {
+      await this.adminBot.telegram.sendMessage(adminChatId, text, options as any);
+    } catch (error) {
+      console.error('Не вдалося надіслати сповіщення адміністратору:', error);
+    }
+  }
+
+  /**
+   * Адміністратор підтверджує виконавця. Виконавець може приступати до виконання.
+   */
+  async confirmExecutorAssignment(
+    orderId: string,
+    adminId: string,
+  ): Promise<void> {
+    const order = await this.getOrderObject(orderId);
+    const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+    if (currentStatus !== OrderStatus.Assigned) {
+      throw new BadRequestException('Замовлення не в статусі Assigned');
+    }
+
+    order.set(OrderTable.Fields.AdminConfirmedAt, new Date());
+    order.set(OrderTable.Fields.AdminConfirmedBy, adminId);
+    order.set(OrderTable.Fields.AdminConfirmationResponse, 'yes');
+    // Allow executor to start execution
+    order.set(OrderTable.Fields.Status, OrderStatus.Assigned);
+    await order.save();
+
+    await this.recordStatusHistory({
+      orderId,
+      fromStatus: currentStatus,
+      toStatus: OrderStatus.Assigned,
+      changedBy: `admin:${adminId}`,
+      reason: 'admin_confirmed_executor',
+    });
+
+    // Notify executor that they can proceed
+    const executorId = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
+    if (executorId) {
+      try {
+        await this.executorBot.telegram.sendMessage(
+          executorId,
+          `✅ Адміністратор підтвердив ваше призначення на замовлення №${orderId}.\n\nТепер ви можете приступати до виконання робіт. Перейдіть до «Мої замовлення» та оберіть замовлення для початку роботи.`,
+          { parse_mode: 'HTML' },
+        );
+      } catch (error) {
+        console.error('Не вдалося надіслати повідомлення виконавцю:', error);
+      }
+    }
+  }
+
+  /**
+   * Адміністратор запитує уточнення від виконавця.
+   */
+  async clarifyExecutorAssignment(
+    orderId: string,
+    adminId: string,
+    comment: string,
+  ): Promise<void> {
+    const order = await this.getOrderObject(orderId);
+    const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+    if (currentStatus !== OrderStatus.Assigned) {
+      throw new BadRequestException('Замовлення не в статусі Assigned');
+    }
+
+    order.set(OrderTable.Fields.AdminConfirmedAt, new Date());
+    order.set(OrderTable.Fields.AdminConfirmedBy, adminId);
+    order.set(OrderTable.Fields.AdminConfirmationResponse, 'clarification');
+    order.set(OrderTable.Fields.AdminComment, comment);
+    await order.save();
+
+    await this.recordStatusHistory({
+      orderId,
+      fromStatus: currentStatus,
+      toStatus: currentStatus,
+      changedBy: `admin:${adminId}`,
+      reason: 'admin_clarified_executor',
+      comment,
+    });
+
+    // Notify executor that clarification is needed
+    const executorId = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
+    if (executorId) {
+      try {
+        await this.executorBot.telegram.sendMessage(
+          executorId,
+          `❓ Адміністратор запросив уточнення по замовленню №${orderId}.\n\nКоментар адміністратора: ${comment}\n\nБудь ласка, надішліть відповідь (фото та/або коментар).`,
+          { parse_mode: 'HTML' },
+        );
+      } catch (error) {
+        console.error('Не вдалося надіслати повідомлення виконавцю:', error);
+      }
+    }
+  }
+
+  /**
+   * Виконавець відповідає на уточнення адміністратора (фото та/або коментар).
+   */
+  async respondToAdminClarification(
+    orderId: string,
+    executorId: string,
+    comment?: string,
+    photoFileIds?: string[],
+  ): Promise<void> {
+    const order = await this.getOrderObject(orderId);
+    const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
+    if (currentExecutor !== executorId) {
+      throw new ForbiddenException('Ви не є виконавцем цього замовлення');
+    }
+
+    if (comment) {
+      order.set(OrderTable.Fields.ExecutorComment, comment);
+    }
+    await order.save();
+
+    // Notify admin about executor's response
+    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
+    if (adminChatId) {
+      const text =
+        `🔄 <b>Відповідь виконавця на уточнення (замовлення №${orderId})</b>\n\n` +
+        `💬 Коментар: ${comment || '—'}\n` +
+        `📸 Фото: ${photoFileIds?.length ?? 0} шт.`;
+      try {
+        await this.adminBot.telegram.sendMessage(adminChatId, text, { parse_mode: 'HTML' });
+        for (const fileId of photoFileIds ?? []) {
+          try {
+            await this.adminBot.telegram.sendPhoto(adminChatId, fileId);
+          } catch {
+            // ignore
+          }
+        }
+      } catch (error) {
+        console.error('Не вдалося надіслати відповідь адміністратору:', error);
+      }
+    }
+  }
+
+  // ==================== Admin review of before photos ====================
+
+  /**
+   * Spовіщає адміністратора про завантажені фото «до» для перевірки.
+   * Надсилає фото «до» та кнопки підтвердження/уточнення.
+   */
+  async notifyAdminBeforePhotos(
+    orderId: string,
+    executorTelegramId: string,
+  ): Promise<void> {
+    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
+    if (!adminChatId) return;
+
+    const order = await this.findById(orderId);
+    if (!order) return;
+
+    let performer: any;
+    try {
+      performer = await this.performersService.findByTelegramId(executorTelegramId);
+    } catch {
+      performer = null;
+    }
+
+    const fullName =
+      performer?.firstName || performer?.lastName
+        ? `${performer?.lastName ?? ''} ${performer?.firstName ?? ''}`.trim()
+        : '';
+    const phone = performer?.phoneNumber ?? '';
+
+    const photosBeforeBySlot: Record<string, string[]> =
+      ((order.report?.photosBeforeBySlot as any) ?? {});
+    const totalPhotos = Object.values(photosBeforeBySlot).flat().length;
+
+    // Надсилаємо всі фото адміну (організовано по слотах)
+    const slotOrder = ['front', 'left', 'right', 'monument'];
+    const slotNames: Record<string, string> = {
+      front: 'Загальний вигляд спереду',
+      left: 'Вигляд зліва',
+      right: 'Вигляд справа',
+      monument: 'Памʼятник крупним планом',
+    };
+
+    for (const slotKey of slotOrder) {
+      const photos = photosBeforeBySlot[slotKey] ?? [];
+      for (const filePath of photos) {
+        try {
+          const buffer = await this.getImageBuffer(filePath);
+          if (!buffer) continue;
+          await this.adminBot.telegram.sendPhoto(adminChatId, { source: buffer }, {
+            caption: `📸 ${slotNames[slotKey] ?? slotKey}`,
+          });
+        } catch (e) {
+          console.error(`Не вдалося надіслати фото ${filePath} адміну:`, e);
+        }
+      }
+    }
+
+    const text =
+      `📸 <b>Фото «до» на перевірку (замовлення №${orderId})</b>\n\n` +
+      `📌 Послуга: ${order.service?.name ?? '—'}\n` +
+      `👤 Виконавець: ${this.escapeHtml(fullName) || '—'}\n` +
+      `📞 Телефон: ${this.escapeHtml(phone) || '—'}\n` +
+      `🪦 Місце поховання: ${order.details?.burialId ?? '—'}\n` +
+      `💬 Коментар клієнта: ${order.clientComment || '—'}\n` +
+      `📸 Всього фото: ${totalPhotos}` +
+      `\n\nПідтвердьте фото «до» або запросіть уточнення:`;
+
+    const options = {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: '✅ Підтвердити фото «до»', callback_data: `admin_confirm_before_photos_${orderId}` },
+            { text: '❓ Уточнити', callback_data: `admin_clarify_before_photos_${orderId}` },
+          ],
+        ],
+      },
+    };
+
+    try {
+      await this.adminBot.telegram.sendMessage(adminChatId, text, options as any);
+    } catch (error) {
+      console.error('Не вдалося надіслати сповіщення адміністратору про фото «до»:', error);
+    }
+  }
+
+  /**
+   * Адміністратор підтверджує фото «до». Виконавець може приступати до подальших кроків.
+   */
+  async confirmBeforePhotos(
+    orderId: string,
+    adminId: string,
+  ): Promise<void> {
+    const order = await this.getOrderObject(orderId);
+    const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+    if (currentStatus !== OrderStatus.Assigned) {
+      throw new BadRequestException('Замовлення не в статусі Assigned');
+    }
+
+    order.set(OrderTable.Fields.BeforePhotosConfirmedAt, new Date());
+    order.set(OrderTable.Fields.BeforePhotosConfirmedBy, adminId);
+    order.set(OrderTable.Fields.BeforePhotosConfirmationResponse, 'yes');
+    await order.save();
+
+    await this.recordStatusHistory({
+      orderId,
+      fromStatus: currentStatus,
+      toStatus: currentStatus,
+      changedBy: `admin:${adminId}`,
+      reason: 'admin_confirmed_before_photos',
+    });
+
+    // Notify executor that before photos are confirmed
+    const executorId = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
+    if (executorId) {
+      try {
+        await this.executorBot.telegram.sendMessage(
+          executorId,
+          `✅ Адміністратор підтвердив фото «до» для замовлення №${orderId}.\n\nТепер ви можете приступати до виконання робіт.`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  { text: '➡️ Далі — Service Checklist', callback_data: `executor_go_checklist_${orderId}` },
+                ],
+              ],
+            },
+          },
+        );
+      } catch (error) {
+        console.error('Не вдалося надіслати повідомлення виконавцю:', error);
+      }
+    }
+
+    // Notify client about before photos for verification (Req 12)
+    await this.notifyClientBeforePhotos(orderId, order);
+  }
+
+  /**
+   * Адміністратор запитує уточнення щодо фото «до».
+   */
+  async clarifyBeforePhotos(
+    orderId: string,
+    adminId: string,
+    comment: string,
+  ): Promise<void> {
+    const order = await this.getOrderObject(orderId);
+    const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+    if (currentStatus !== OrderStatus.Assigned) {
+      throw new BadRequestException('Замовлення не в статусі Assigned');
+    }
+
+    order.set(OrderTable.Fields.BeforePhotosConfirmedAt, new Date());
+    order.set(OrderTable.Fields.BeforePhotosConfirmedBy, adminId);
+    order.set(OrderTable.Fields.BeforePhotosConfirmationResponse, 'clarification');
+    order.set(OrderTable.Fields.AdminComment, comment);
+    await order.save();
+
+    await this.recordStatusHistory({
+      orderId,
+      fromStatus: currentStatus,
+      toStatus: currentStatus,
+      changedBy: `admin:${adminId}`,
+      reason: 'admin_clarified_before_photos',
+      comment,
+    });
+
+    // Notify executor that clarification is needed
+    const executorId = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
+    if (executorId) {
+      try {
+        await this.executorBot.telegram.sendMessage(
+          executorId,
+          `❓ Адміністратор запросив уточнення щодо фото «до» (замовлення №${orderId}).\n\nКоментар адміністратора: ${comment}\n\nБудь ласка, завантажте оновлені фото «до».`,
+          { parse_mode: 'HTML' },
+        );
+      } catch (error) {
+        console.error('Не вдалося надіслати повідомлення виконавцю:', error);
+      }
+    }
+  }
+
+  // ==================== Submission for completion review ====================
+
+  /**
+   * Виконавець відправляє роботу на перевірку адміністратору.
+   * Статус: InProgress → AwaitingCompletionReview.
+   */
+  async submitForCompletionReview(
+    orderId: string,
+    executorId: string,
+    comment?: string,
+  ): Promise<void> {
+    const order = await this.getOrderObject(orderId);
+    const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+    const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
+    if (currentStatus !== OrderStatus.InProgress || currentExecutor !== executorId) {
+      throw new BadRequestException('Замовлення не доступне для відправки на перевірку');
+    }
+
+    if (comment) {
+      order.set(OrderTable.Fields.SubmissionComment, comment);
+    }
+    order.set(OrderTable.Fields.Status, OrderStatus.AwaitingCompletionReview);
+    order.set(OrderTable.Fields.SubmittedAt, new Date());
+    await order.save();
+
+    await this.recordStatusHistory({
+      orderId,
+      fromStatus: currentStatus,
+      toStatus: OrderStatus.AwaitingCompletionReview,
+      changedBy: `executor:${executorId}`,
+      reason: 'executor_submitted_for_review',
+      comment,
+    });
+
+    // Notify admin about completion review — send after photos first
+    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
+    if (adminChatId) {
+      const orderReport = order.get('report') as any;
+      const photosAfterBySlot: Record<string, string[]> =
+        ((orderReport?.photosAfterBySlot as any) ?? {});
+
+      const slotOrder = ['front', 'left', 'right', 'monument'];
+      const slotNames: Record<string, string> = {
+        front: 'Загальний вигляд спереду',
+        left: 'Вигляд зліва',
+        right: 'Вигляд справа',
+        monument: 'Памʼятник крупним планом',
+      };
+
+      for (const slotKey of slotOrder) {
+        const photos = photosAfterBySlot[slotKey] ?? [];
+        for (const filePath of photos) {
+          try {
+            const buffer = await this.getImageBuffer(filePath);
+            if (!buffer) continue;
+            await this.adminBot.telegram.sendPhoto(adminChatId, { source: buffer }, {
+              caption: `📸 «Після»: ${slotNames[slotKey] ?? slotKey}`,
+            });
+          } catch (e) {
+            console.error(`Не вдалося надіслати фото ${filePath} адміну:`, e);
+          }
+        }
+      }
+  
+      const totalPhotos = Object.values(photosAfterBySlot).flat().length;
+      const text =
+        `🔍 <b>Робота на перевірку (замовлення №${orderId})</b>\n\n` +
+        `👤 Виконавець: <code>${executorId}</code>\n` +
+        `💬 Коментар: ${comment || '—'}\n` +
+        `📸 Фото «після»: ${totalPhotos} шт.\n\n` +
+        `Перегляньте фото «до»/«після» та чек-лист, потім підтвердьте або поверніть на доопрацювання.`;
+      try {
+        await this.adminBot.telegram.sendMessage(adminChatId, text, {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '✅ Підтвердити виконання', callback_data: `admin_confirm_completion_${orderId}` },
+                { text: '🔄 Повернути на доопрацювання', callback_data: `admin_request_revision_${orderId}` },
+              ],
+            ],
+          },
+        });
+      } catch (error) {
+        console.error('Не вдалося надіслати сповіщення адміністратору про перевірку:', error);
+      }
+    }
+  }
+
+  /**
+   * Адміністратор підтверджує виконання робіт.
+   * Статус: AwaitingCompletionReview → Done.
+   */
+  async confirmCompletion(
+    orderId: string,
+    adminId: string,
+  ): Promise<void> {
+    const order = await this.getOrderObject(orderId);
+    const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+    if (currentStatus !== OrderStatus.AwaitingCompletionReview) {
+      throw new BadRequestException('Замовлення не очікує на перевірку виконання');
+    }
+
+    order.set(OrderTable.Fields.Status, OrderStatus.Done);
+    order.set(OrderTable.Fields.CompletedAt, new Date());
+    order.set(OrderTable.Fields.CompletedBy, adminId);
+    await order.save();
+
+    await this.recordStatusHistory({
+      orderId,
+      fromStatus: currentStatus,
+      toStatus: OrderStatus.Done,
+      changedBy: `admin:${adminId}`,
+      reason: 'admin_confirmed_completion',
+    });
+
+    // Send client report
+    try {
+      await this.sendClientReport(orderId);
+    } catch (error) {
+      console.error('Не вдалося надіслати звіт клієнту:', error);
+    }
+  }
+
+  /**
+   * Адміністратор повертає роботу на доопрацювання.
+   * Статус: AwaitingCompletionReview → RevisionRequired.
+   */
+  async requestRevision(
+    orderId: string,
+    adminId: string,
+    description: string,
+  ): Promise<void> {
+    const order = await this.getOrderObject(orderId);
+    const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+    if (currentStatus !== OrderStatus.AwaitingCompletionReview) {
+      throw new BadRequestException('Замовлення не очікує на перевірку виконання');
+    }
+
+    order.set(OrderTable.Fields.Status, OrderStatus.RevisionRequired);
+    await order.save();
+
+    await this.recordStatusHistory({
+      orderId,
+      fromStatus: currentStatus,
+      toStatus: OrderStatus.RevisionRequired,
+      changedBy: `admin:${adminId}`,
+      reason: 'admin_requested_revision',
+      comment: description,
+    });
+
+    // Notify executor about revision
+    const executorId = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
+    if (executorId) {
+      try {
+        await this.executorBot.telegram.sendMessage(
+          executorId,
+          `🔄 <b>Роботу повернено на доопрацювання (замовлення №${orderId})</b>\n\nКоментар адміністратора: ${description}\n\nВиправте зауваження та знову надішліть роботу на перевірку.`,
+          { parse_mode: 'HTML' },
+        );
+      } catch (error) {
+        console.error('Не вдалося надіслати повідомлення виконавцю:', error);
+      }
+    }
+  }
+
   /**
    * ❌ Метод ВІДХИЛЕННЯ заявки адміном + сповіщення клієнта
    */
@@ -604,8 +1171,8 @@ export class OrdersService {
       if (currentStatus !== OrderStatus.Assigned || currentExecutor !== executorId) {
         throw new BadRequestException('Замовлення не доступне для запуску');
       }
-      order.set(OrderTable.Fields.Status, OrderStatus.InProgress);
-      order.set(OrderTable.Fields.StartedAt, new Date());
+      // Статус залишається Assigned — перехід до InProgress відбувається після підтвердження клієнтом (Етап 12)
+      // Адмін підтверджує фото «до» після того, як виконавець завантажить їх (Етап 11), а не на старті
       const updated = await order.save();
       return this.mapOrderFields(updated);
     } catch (error) {
@@ -1529,7 +2096,32 @@ export class OrdersService {
       | { id: string; name: string; price: number }
       | undefined;
     const burialId = order.get(OrderTable.Fields.BurialId) as string | undefined;
-    const photosBefore = order.get(OrderTable.Fields.ReportPhotosBefore) as string[] | undefined;
+    const photosBeforeBySlot: Record<string, string[]> =
+      (order.get(OrderTable.Fields.ReportPhotosBeforeBySlot) as any) ?? {};
+
+    // Надсилаємо всі 4 фото клієнту (організовано по слотах)
+    const slotOrder = ['front', 'left', 'right', 'monument'];
+    const slotNames: Record<string, string> = {
+      front: 'Загальний вигляд спереду',
+      left: 'Вигляд зліва',
+      right: 'Вигляд справа',
+      monument: 'Памʼятник крупним планом',
+    };
+
+    for (const slotKey of slotOrder) {
+      const photos = photosBeforeBySlot[slotKey] ?? [];
+      for (const filePath of photos) {
+        try {
+          const buffer = await this.getImageBuffer(filePath);
+          if (!buffer) continue;
+          await this.clientBot.telegram.sendPhoto(clientTelegramId, { source: buffer }, {
+            caption: `📸 ${slotNames[slotKey] ?? slotKey}`,
+          });
+        } catch (e) {
+          console.error(`Не вдалося надіслати фото ${filePath} клієнту:`, e);
+        }
+      }
+    }
 
     const text =
       `📸 <b>Фото «до» завантажено за замовленням №${orderId}</b>\n\n` +

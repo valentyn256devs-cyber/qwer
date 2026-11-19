@@ -1,4 +1,4 @@
-import {Action, Ctx, Start, Update} from "nestjs-telegraf";
+import {Action, Ctx, On, Start, Update} from "nestjs-telegraf";
 import {OrdersService} from "../../orders/orders.service";
 import {Context, Markup} from "telegraf";
 import {OrderStepUa} from "../telegram-constants";
@@ -20,7 +20,145 @@ export class TelegramAdminListener {
     );
   }
 
-  // 1. Обробка кнопки "Підтвердити"
+  // 1. Admin confirms executor assignment (after executor took order + before-photos)
+  @Action(/^admin_confirm_executor_(.+)$/)
+  async handleAdminConfirmExecutor(@Ctx() ctx: Context) {
+    if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
+    const orderId = ctx.callbackQuery.data.replace('admin_confirm_executor_', '');
+
+    try {
+      const adminId = ctx.from?.id.toString() ?? '';
+      await this.ordersService.confirmExecutorAssignment(orderId, adminId);
+
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
+      const message = ctx.callbackQuery.message;
+      const text = `✅ <b>Виконавця підтверджено для замовлення №${orderId}</b>\n\nВиконавець може приступати до виконання робіт.`;
+
+      if (message && 'photo' in message && message.photo) {
+        await ctx.editMessageCaption(text, { parse_mode: 'HTML' });
+      } else {
+        await ctx.reply(text, { parse_mode: 'HTML' });
+      }
+    } catch (error) {
+      console.error(error);
+      await ctx.answerCbQuery('Помилка підтвердження виконавця.');
+    }
+  }
+
+  // 2. Admin clarifies executor assignment
+  @Action(/^admin_clarify_executor_(.+)$/)
+  async handleAdminClarifyExecutor(@Ctx() ctx: any) {
+    if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
+    const orderId = ctx.callbackQuery.data.replace('admin_clarify_executor_', '');
+
+    try {
+      ctx.session = ctx.session || {};
+      ctx.session.adminClarifyingOrderId = orderId;
+
+      await ctx.reply(
+        `❓ <b>Уточнення по замовленню №${orderId}</b>\n\nБудь ласка, напишіть коментар для виконавця (що саме потрібно уточнити/виправити).`,
+        { parse_mode: 'HTML' },
+      );
+      await ctx.answerCbQuery('Очікую на ваш коментар...');
+    } catch (error) {
+      console.error(error);
+      await ctx.answerCbQuery('Помилка ініціації уточнення.');
+    }
+  }
+
+  // 3. Admin confirms before photos (specific — must be before generic admin_confirm_)
+  @Action(/^admin_confirm_before_photos_(.+)$/)
+  async handleAdminConfirmBeforePhotos(@Ctx() ctx: Context) {
+    if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
+    const orderId = ctx.callbackQuery.data.replace('admin_confirm_before_photos_', '');
+
+    try {
+      const adminId = ctx.from?.id.toString() ?? '';
+      await this.ordersService.confirmBeforePhotos(orderId, adminId);
+
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
+      const message = ctx.callbackQuery.message;
+      const text = `✅ <b>Фото «до» підтверджено для замовлення №${orderId}</b>\n\nВиконавець може приступати до виконання робіт.`;
+
+      if (message && 'photo' in message && message.photo) {
+        await ctx.editMessageCaption(text, { parse_mode: 'HTML' });
+      } else {
+        await ctx.reply(text, { parse_mode: 'HTML' });
+      }
+    } catch (error) {
+      console.error(error);
+      await ctx.answerCbQuery('Помилка підтвердження фото «до».');
+    }
+  }
+
+  // 4. Admin requests clarification on before photos (specific — must be before generic admin_clarify_)
+  @Action(/^admin_clarify_before_photos_(.+)$/)
+  async handleAdminClarifyBeforePhotos(@Ctx() ctx: any) {
+    if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
+    const orderId = ctx.callbackQuery.data.replace('admin_clarify_before_photos_', '');
+
+    try {
+      ctx.session = ctx.session || {};
+      ctx.session.adminClarifyingBeforePhotosOrderId = orderId;
+
+      await ctx.reply(
+        `❓ <b>Уточнення щодо фото «до» (замовлення №${orderId})</b>\n\nБудь ласка, напишіть коментар для виконавця (що саме потрібно уточнити/виправити у фото).`,
+        { parse_mode: 'HTML' },
+      );
+      await ctx.answerCbQuery('Очікую на ваш коментар...');
+    } catch (error) {
+      console.error(error);
+      await ctx.answerCbQuery('Помилка ініціації уточнення.');
+    }
+  }
+
+  // 5. Admin confirms completion of work (specific — must be before generic admin_confirm_)
+  @Action(/^admin_confirm_completion_(.+)$/)
+  async handleAdminConfirmCompletion(@Ctx() ctx: Context) {
+    if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
+    const orderId = ctx.callbackQuery.data.replace('admin_confirm_completion_', '');
+
+    try {
+      const adminId = ctx.from?.id.toString() ?? '';
+      await this.ordersService.confirmCompletion(orderId, adminId);
+
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
+      const message = ctx.callbackQuery.message;
+      const text = `✅ <b>Виконання підтверджено для замовлення №${orderId}</b>\n\nЗамовлення завершено. Звіт надіслано клієнту.`;
+
+      if (message && 'photo' in message && message.photo) {
+        await ctx.editMessageCaption(text, { parse_mode: 'HTML' });
+      } else {
+        await ctx.reply(text, { parse_mode: 'HTML' });
+      }
+    } catch (error) {
+      console.error(error);
+      await ctx.answerCbQuery('Помилка підтвердження виконання.');
+    }
+  }
+
+  // 6. Admin requests revision (specific)
+  @Action(/^admin_request_revision_(.+)$/)
+  async handleAdminRequestRevision(@Ctx() ctx: any) {
+    if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
+    const orderId = ctx.callbackQuery.data.replace('admin_request_revision_', '');
+
+    try {
+      ctx.session = ctx.session || {};
+      ctx.session.adminRequestingRevisionOrderId = orderId;
+
+      await ctx.reply(
+        `🔄 <b>Повернення на доопрацювання (замовлення №${orderId})</b>\n\nБудь ласка, напишіть опис недоліків, які потрібно виправити виконавцю.`,
+        { parse_mode: 'HTML' },
+      );
+      await ctx.answerCbQuery('Очікую на опис недоліків...');
+    } catch (error) {
+      console.error(error);
+      await ctx.answerCbQuery('Помилка ініціації доопрацювання.');
+    }
+  }
+
+  // 7. Обробка кнопки "Підтвердити" (клієнтське замовлення) — GENERIC, must be after specific handlers
   @Action(/^admin_confirm_(.+)_(.+)$/)
   async handleAdminConfirm(@Ctx() ctx: Context) {
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
@@ -50,7 +188,7 @@ export class TelegramAdminListener {
     }
   }
 
-  // 2. Обробка кнопки "Відхилити"
+  // 8. Обробка кнопки "Відхилити"
   @Action(/^admin_reject_(.+)_(.+)$/)
   async handleAdminReject(@Ctx() ctx: Context) {
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
@@ -78,7 +216,7 @@ export class TelegramAdminListener {
     }
   }
 
-  // 3. Обробка кнопки "Уточнити"
+  // 9. Admin requests clarification from executor (GENERIC — after specific admin_clarify_before_photos_)
   @Action(/^admin_clarify_(.+)_(.+)$/)
   async handleAdminClarify(@Ctx() ctx: Context) {
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
@@ -102,7 +240,7 @@ export class TelegramAdminListener {
     }
   }
 
-  // 4. Обробка кнопки "Надіслати на ревізію"
+  // 10. Обробка кнопки "Надіслати на ревізію"
   @Action(/^admin_revision_(.+)$/)
   async handleAdminRevision(@Ctx() ctx: Context) {
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
@@ -127,7 +265,7 @@ export class TelegramAdminListener {
     }
   }
 
-  // 5. Обробка кнопки "Схвалити"
+  // 11. Обробка кнопки "Схвалити"
   @Action(/^admin_approve_(.+)$/)
   async handleAdminApprove(@Ctx() ctx: Context) {
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
@@ -153,7 +291,7 @@ export class TelegramAdminListener {
     }
   }
 
-  // 6. Unassign Executor - show reason selection
+  // 12. Unassign Executor - show reason selection
   @Action(/^admin_unassign_(.+)$/)
   async handleAdminUnassign(@Ctx() ctx: Context) {
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
@@ -174,7 +312,7 @@ export class TelegramAdminListener {
     );
   }
 
-  // 7. Unassign Executor - confirm with reason
+  // 13. Unassign Executor - confirm with reason
   @Action(/^admin_unassign_reason_(.+)_(.+)$/)
   async handleAdminUnassignReason(@Ctx() ctx: Context) {
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
@@ -201,7 +339,7 @@ export class TelegramAdminListener {
     }
   }
 
-  // 8. Change Executor
+  // 14. Change Executor
   @Action(/^admin_change_executor_(.+)$/)
   async handleAdminChangeExecutor(@Ctx() ctx: Context) {
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
@@ -215,7 +353,7 @@ export class TelegramAdminListener {
     await ctx.answerCbQuery('Введіть ID нового виконавця');
   }
 
-  // 9. Take Over - admin becomes executor
+  // 15. Take Over - admin becomes executor
   @Action(/^admin_take_over_(.+)$/)
   async handleAdminTakeOver(@Ctx() ctx: Context) {
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
@@ -240,5 +378,78 @@ export class TelegramAdminListener {
     }
   }
 
-}
+  // 16. Capture admin's clarification comment for before photos / revision / executor
+  @On('message')
+  async handleAdminClarificationComment(@Ctx() ctx: any) {
+    const beforePhotosOrderId = (ctx.session as any)?.adminClarifyingBeforePhotosOrderId;
+    const revisionOrderId = (ctx.session as any)?.adminRequestingRevisionOrderId;
 
+    if (beforePhotosOrderId) {
+      const adminId = ctx.from?.id?.toString() ?? '';
+      const comment = ctx.message?.text?.trim();
+      if (!comment) return;
+
+      try {
+        await this.ordersService.clarifyBeforePhotos(beforePhotosOrderId, adminId, comment);
+
+        // Clear session state
+        (ctx.session as any).adminClarifyingBeforePhotosOrderId = null;
+
+        await ctx.reply(
+          `🟡 <b>Запит на уточнення фото «до» надіслано виконавцю (замовлення №${beforePhotosOrderId})</b>\n\nКоментар: ${comment}`,
+          { parse_mode: 'HTML' },
+        );
+      } catch (error) {
+        console.error(error);
+        await ctx.reply('Помилка надсилання запиту на уточнення.');
+      }
+      return;
+    }
+
+    if (revisionOrderId) {
+      const adminId = ctx.from?.id?.toString() ?? '';
+      const comment = ctx.message?.text?.trim();
+      if (!comment) return;
+
+      try {
+        await this.ordersService.requestRevision(revisionOrderId, adminId, comment);
+
+        // Clear session state
+        (ctx.session as any).adminRequestingRevisionOrderId = null;
+
+        await ctx.reply(
+          `🔄 <b>Замовлення повернено на доопрацювання (замовлення №${revisionOrderId})</b>\n\nОпис недоліків: ${comment}`,
+          { parse_mode: 'HTML' },
+        );
+      } catch (error) {
+        console.error(error);
+        await ctx.reply('Помилка повернення на доопрацювання.');
+      }
+      return;
+    }
+
+    // Legacy: executor clarification comment
+    const orderId = (ctx.session as any)?.adminClarifyingOrderId;
+    if (!orderId) return;
+
+    const adminId = ctx.from?.id?.toString() ?? '';
+    const comment = ctx.message?.text?.trim();
+    if (!comment) return;
+
+    try {
+      await this.ordersService.clarifyExecutorAssignment(orderId, adminId, comment);
+
+      // Clear session state
+      (ctx.session as any).adminClarifyingOrderId = null;
+
+      await ctx.reply(
+        `🟡 <b>Запит на уточнення надіслано виконавцю (замовлення №${orderId})</b>\n\nКоментар: ${comment}`,
+        { parse_mode: 'HTML' },
+      );
+    } catch (error) {
+      console.error(error);
+      await ctx.reply('Помилка надсилання запиту на уточнення.');
+    }
+  }
+
+}

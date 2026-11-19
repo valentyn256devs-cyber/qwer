@@ -48,7 +48,7 @@ export class OrderDetailsScene {
 
     await ctx.reply(msg, { parse_mode: 'HTML' });
 
-    const actions = buildActions(order.status, order.id);
+    const actions = buildActions(order as any, order.id);
     if (actions.length > 0) {
       await ctx.reply(ExecutorConst.ChooseAction, {
         reply_markup: Markup.inlineKeyboard(actions).reply_markup,
@@ -88,9 +88,23 @@ export class OrderDetailsScene {
   }
 }
 
-function buildActions(status: string, orderId: string): any[][] {
+function buildActions(order: any, orderId: string): any[][] {
+  const status = order.status;
+  const beforePhotosResponse = order.BeforePhotosConfirmationResponse;
+
   switch (status) {
     case OrderStatus.Assigned:
+      // If admin requested clarification on before photos, executor must respond first
+      if (beforePhotosResponse === 'clarification') {
+        return [
+          [Markup.button.callback(ExecutorConst.RespondClarificationButton, `executor_respond_clarification_${orderId}`)],
+          [Markup.button.callback(ExecutorConst.ProposeUpdateButton, `executor_propose_update_${orderId}`)],
+          [Markup.button.callback(ExecutorConst.ReportProblemButton, `executor_report_problem_${orderId}`)],
+          [Markup.button.callback(ExecutorConst.CannotCompleteButton, `executor_cannot_complete_${orderId}`)],
+        ];
+      }
+      // Executor can start search/verify regardless of before-photo admin confirmation.
+      // Admin confirms before photos AFTER executor uploads them (Етап 11), not at start (Етап 10).
       return [
         [Markup.button.callback(ExecutorConst.StartButton, `executor_start_${orderId}`)],
         [Markup.button.callback(ExecutorConst.ProposeUpdateButton, `executor_propose_update_${orderId}`)],

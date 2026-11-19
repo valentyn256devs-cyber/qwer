@@ -8,9 +8,10 @@ import {CreateBurialScene} from "../telegram-bot/client/scenes/create-burial.sce
 import {BurialsModule} from "../burials/burials.module";
 import {EditBurialScene} from "../telegram-bot/client/scenes/edit-burial.scene";
 import {PerformersModule} from "../performers/performers.module";
+import {ImagesModule} from "../images/images.module";
 
 @Module({
-  imports: [ServicesModule, BurialsModule, PerformersModule],
+  imports: [ServicesModule, BurialsModule, PerformersModule, ImagesModule],
   controllers: [OrdersController],
   providers: [
     OrdersService,

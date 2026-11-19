@@ -5,8 +5,8 @@ import { OrdersService } from '../../../orders/orders.service';
 import { Scene as SceneConst } from '../../telegram-constants';
 import { ExecutorConst } from '../model/executor-const';
 import {
-  handleOrderPhoto,
   requireExecutorOrder,
+  saveOrderPhoto,
 } from '../model/executor-scene-helpers';
 import { IMAGE_STORAGE_SERVICE } from '../../../images/image-storage.constants';
 import type { ImageStorageService } from '../../../images/image-storage.interface';
@@ -28,23 +28,15 @@ const DEFAULT_AFTER_SLOTS: PhotoSlot[] = [
 ];
 
 /** Кнопки під повідомленням про завантаження фото «після». */
-const AFTER_PHOTO_BUTTONS = (
-  slots: PhotoSlot[],
-  photosPerSlot: Record<string, string[]>,
-) => {
+const AFTER_PHOTO_BUTTONS = (allFilled: boolean) => {
   const rows: any[][] = [];
-  rows.push(
-    slots.map((s) => {
-      const count = (photosPerSlot[s.key] ?? []).length;
-      const ok = count >= s.minPhotos;
-      return Markup.button.callback(
-        `${ok ? '✅' : '⬜'} ${s.name}`,
-        `executor_select_after_slot_${s.key}`,
-      );
-    }),
-  );
   rows.push([
-    Markup.button.callback(ExecutorConst.GoSubmitButton, 'executor_go_submit'),
+    Markup.button.callback(
+      allFilled
+        ? ExecutorConst.GoSubmitButton
+        : ExecutorConst.GoSubmitButton,
+      'executor_go_submit',
+    ),
   ]);
   rows.push([
     Markup.button.callback(ExecutorConst.BackToSelfcheck, 'executor_back_to_selfcheck'),
@@ -66,40 +58,62 @@ export class AfterPhotosScene {
     if (!order) return;
 
     const slots = ((order.service as any)?.photoSlots as PhotoSlot[] | undefined) ?? DEFAULT_AFTER_SLOTS;
-    const beforePhotos: Record<string, string[]> =
-      ((order.report?.photosBeforeBySlot as any) ?? {});
     const afterPhotos: Record<string, string[]> =
       ((order.report?.photosAfterBySlot as any) ?? {});
 
-    // Ініціалізуємо вибраний слот у сесії
-    ctx.session = ctx.session || {};
-    if (!ctx.session.selectedAfterPhotoSlot) {
-      ctx.session.selectedAfterPhotoSlot = slots[0]?.key;
+    // Перевіряємо, чи всі обовʼязкові слоти заповнені
+    const allFilled = slots.every((s) => {
+      if (!s.required) return true;
+      return ((afterPhotos[s.key] ?? []).length >= s.minPhotos);
+    });
+
+    if (allFilled) {
+      await ctx.reply(
+        `📸 <b>Фото «після»</b>\n\nВсі обовʼязкові фото завантажено.\nНадішліть на перевірку адміністратору.`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard(AFTER_PHOTO_BUTTONS(true)).reply_markup,
+        },
+      );
+      return;
     }
 
-    const msg =
-      `📸 <b>Фото «після»</b>\n\n` +
-      `Завантажте фото «після» відповідно до слотів «до».\n` +
-      `Рекомендується використовувати Before Photo як reference для максимального однакового ракурсу.\n\n` +
-      `📸 Before Photo: ${Object.values(beforePhotos).flat().length} шт.\n` +
-      `📸 After Photo: ${Object.values(afterPhotos).flat().length} шт.\n\n` +
-      `Статус слотів:\n` +
-      slots.map((s, i) => {
-        const count = (afterPhotos[s.key] ?? []).length;
-        const ok = count >= s.minPhotos;
-        return `${ok ? '✅' : '⬜'} ${i + 1}. <b>${s.name}</b> (${count}/${s.minPhotos})\n   ${s.instruction}`;
-      }).join('\n\n');
+    // Знаходимо перший незаповнений обовʼязковий слот
+    ctx.session = ctx.session || {};
+    let currentSlotIndex = ctx.session.currentAfterSlotIndex ?? 0;
 
-    await ctx.reply(msg, { parse_mode: 'HTML' });
+    // Пропускаємо вже заповнені слоти
+    while (currentSlotIndex < slots.length) {
+      const s = slots[currentSlotIndex];
+      if (s.required && ((afterPhotos[s.key] ?? []).length < s.minPhotos)) {
+        break;
+      }
+      currentSlotIndex++;
+    }
 
-    await ctx.reply(ExecutorConst.PhotoUploadAfter, {
-      reply_markup: Markup.inlineKeyboard(AFTER_PHOTO_BUTTONS(slots, afterPhotos)).reply_markup,
-    });
+    ctx.session.currentAfterSlotIndex = currentSlotIndex;
+
+    if (currentSlotIndex >= slots.length) {
+      await ctx.reply(
+        `📸 <b>Фото «після»</b>\n\nВсі обовʼязкові фото завантажено.\nНадішліть на перевірку адміністратору.`,
+        {
+          parse_mode: 'HTML',
+          reply_markup: Markup.inlineKeyboard(AFTER_PHOTO_BUTTONS(true)).reply_markup,
+        },
+      );
+      return;
+    }
+
+    const slot = slots[currentSlotIndex];
+    await ctx.reply(
+      `📸 <b>Фото «після» — ${slot.name}</b>\n\n${slot.instruction}\n\nНадішліть одне фото.`,
+      { parse_mode: 'HTML' },
+    );
   }
 
   /**
    * Обробка надісланого фото «після».
-   * Фото зберігається у поточно вибраному слоті.
+   * Фото зберігається у поточному слоті, потім переходимо до наступного.
    */
   @On('photo')
   async onAfterPhoto(@Ctx() ctx: ExecutorWizardContext) {
@@ -107,41 +121,136 @@ export class AfterPhotosScene {
     if (!order) return;
 
     const slots = ((order.service as any)?.photoSlots as PhotoSlot[] | undefined) ?? DEFAULT_AFTER_SLOTS;
-    const slotKey = ctx.session?.selectedAfterPhotoSlot ?? slots[0]?.key;
+    const afterPhotos: Record<string, string[]> =
+      ((order.report?.photosAfterBySlot as any) ?? {});
 
-    await handleOrderPhoto(
+    ctx.session = ctx.session || {};
+    let currentSlotIndex = ctx.session.currentAfterSlotIndex ?? 0;
+
+    // Пропускаємо вже заповнені слоти
+    while (currentSlotIndex < slots.length) {
+      const s = slots[currentSlotIndex];
+      if (s.required && ((afterPhotos[s.key] ?? []).length < s.minPhotos)) {
+        break;
+      }
+      currentSlotIndex++;
+    }
+
+    if (currentSlotIndex >= slots.length) {
+      await ctx.reply('Всі обовʼязкові слоти вже заповнені. Надішліть фото на перевірку адміністратору.');
+      return;
+    }
+
+    const slot = slots[currentSlotIndex];
+
+    // Зберігаємо фото у поточний слот
+    const count = await saveOrderPhoto(
       ctx,
       this.imageStorage,
       this.ordersService,
       'after',
-      slotKey,
-      AFTER_PHOTO_BUTTONS(slots, ((order.report?.photosAfterBySlot as any) ?? {})),
+      slot.key,
     );
-  }
 
-  /** Вибір слота для завантаження фото «після». */
-  @Action(/^executor_select_after_slot_(.+)$/)
-  async onSelectSlot(@Ctx() ctx: ExecutorWizardContext) {
-    await ctx.answerCbQuery?.();
-    const slotKey = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
-    ctx.session = ctx.session || {};
-    ctx.session.selectedAfterPhotoSlot = slotKey;
+    if (count === null) {
+      await ctx.reply(ExecutorConst.PhotoSaveError);
+      return;
+    }
 
-    const order = await requireExecutorOrder(ctx, this.ordersService);
-    if (!order) return;
+    // Переходимо до наступного слоту
+    ctx.session.currentAfterSlotIndex = currentSlotIndex + 1;
 
-    const slots = ((order.service as any)?.photoSlots as PhotoSlot[] | undefined) ?? DEFAULT_AFTER_SLOTS;
-    const slot = slots.find((s) => s.key === slotKey);
-    await ctx.reply(
-      `📸 Обрано слот: <b>${slot?.name ?? slotKey}</b>\n${slot?.instruction ?? ''}\n\nНадішліть фото для цього слоту.`,
-      { parse_mode: 'HTML' },
-    );
+    // Перезавантажуємо замовлення, щоб отримати оновлені фото
+    const updatedOrder = await requireExecutorOrder(ctx, this.ordersService);
+    if (!updatedOrder) return;
+
+    const updatedPhotos: Record<string, string[]> =
+      ((updatedOrder.report?.photosAfterBySlot as any) ?? {});
+
+    // Перевіряємо, чи всі обовʼязкові слоти заповнені
+    const allFilled = slots.every((s) => {
+      if (!s.required) return true;
+      return ((updatedPhotos[s.key] ?? []).length >= s.minPhotos);
+    });
+
+    if (allFilled) {
+      await ctx.reply(
+        `✅ Фото для слоту "${slot.name}" збережено (${count}/${slot.minPhotos}).\n\n` +
+        `Всі обовʼязкові фото завантажено.\nНадішліть на перевірку адміністратору.`,
+        {
+          reply_markup: Markup.inlineKeyboard(AFTER_PHOTO_BUTTONS(true)).reply_markup,
+        },
+      );
+    } else {
+      // Знаходимо наступний незаповнений слот
+      let nextSlotIndex = currentSlotIndex + 1;
+      while (nextSlotIndex < slots.length) {
+        const s = slots[nextSlotIndex];
+        if (s.required && ((updatedPhotos[s.key] ?? []).length < s.minPhotos)) {
+          break;
+        }
+        nextSlotIndex++;
+      }
+
+      if (nextSlotIndex < slots.length) {
+        const nextSlot = slots[nextSlotIndex];
+        ctx.session.currentAfterSlotIndex = nextSlotIndex;
+        await ctx.reply(
+          `✅ Фото для слоту "${slot.name}" збережено (${count}/${slot.minPhotos}).\n\n` +
+          `📸 Наступне фото — ${nextSlot.name}\n${nextSlot.instruction}\n\nНадішліть одне фото.`,
+          { parse_mode: 'HTML' },
+        );
+      } else {
+        await ctx.reply(
+          `✅ Фото для слоту "${slot.name}" збережено (${count}/${slot.minPhotos}).\n\n` +
+          `Всі обовʼязкові фото завантажено.\nНадішліть на перевірку адміністратору.`,
+          {
+            reply_markup: Markup.inlineKeyboard(AFTER_PHOTO_BUTTONS(true)).reply_markup,
+          },
+        );
+      }
+    }
   }
 
   @Action('executor_go_submit')
   async onGoSubmit(@Ctx() ctx: ExecutorWizardContext) {
     await ctx.answerCbQuery?.();
-    return ctx.scene.enter(SceneConst.SUBMIT_SCENE);
+
+    const order = await requireExecutorOrder(ctx, this.ordersService);
+    if (!order) return;
+
+    const slots = ((order.service as any)?.photoSlots as PhotoSlot[] | undefined) ?? DEFAULT_AFTER_SLOTS;
+    const afterPhotos: Record<string, string[]> =
+      ((order.report?.photosAfterBySlot as any) ?? {});
+
+    // Validate all required slots are filled
+    const missingSlots = slots
+      .filter((s) => s.required)
+      .filter((s) => {
+        const count = (afterPhotos[s.key] ?? []).length;
+        return count < s.minPhotos;
+      });
+
+    if (missingSlots.length > 0) {
+      const missingNames = missingSlots.map((s) => s.name).join(', ');
+      await ctx.reply(
+        `⚠️ Не всі обовʼязкові слоти фото «після» заповнені.\n\n` +
+        `Бракує фото для: ${missingNames}\n\n` +
+        `Будь ласка, завантажте фото для всіх обовʼязкових слотів перед відправкою на перевірку.`,
+        { parse_mode: 'HTML' },
+      );
+      return;
+    }
+
+    const executorId = ctx.from?.id?.toString() ?? '';
+    await this.ordersService.submitForCompletionReview(order.id!, executorId);
+
+    await ctx.reply(
+      `⏳ Роботу надіслано адміністратору на перевірку (замовлення №${order.id!}).\n\n` +
+      `Очікуйте на підтвердження адміністратора.`,
+      { parse_mode: 'HTML' },
+    );
+    return;
   }
 
   @Action('executor_back_to_selfcheck')
