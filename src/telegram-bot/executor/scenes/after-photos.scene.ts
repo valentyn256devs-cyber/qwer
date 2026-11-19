@@ -28,10 +28,29 @@ const DEFAULT_AFTER_SLOTS: PhotoSlot[] = [
 ];
 
 /** Кнопки під повідомленням про завантаження фото «після». */
-const AFTER_PHOTO_BUTTONS = [
-  [Markup.button.callback(ExecutorConst.GoSubmitButton, 'executor_go_submit')],
-  [Markup.button.callback(ExecutorConst.BackToSelfcheck, 'executor_back_to_selfcheck')],
-];
+const AFTER_PHOTO_BUTTONS = (
+  slots: PhotoSlot[],
+  photosPerSlot: Record<string, string[]>,
+) => {
+  const rows: any[][] = [];
+  rows.push(
+    slots.map((s) => {
+      const count = (photosPerSlot[s.key] ?? []).length;
+      const ok = count >= s.minPhotos;
+      return Markup.button.callback(
+        `${ok ? '✅' : '⬜'} ${s.name}`,
+        `executor_select_after_slot_${s.key}`,
+      );
+    }),
+  );
+  rows.push([
+    Markup.button.callback(ExecutorConst.GoSubmitButton, 'executor_go_submit'),
+  ]);
+  rows.push([
+    Markup.button.callback(ExecutorConst.BackToSelfcheck, 'executor_back_to_selfcheck'),
+  ]);
+  return rows;
+};
 
 @Wizard(SceneConst.AFTER_PHOTOS_SCENE)
 export class AfterPhotosScene {
@@ -47,40 +66,75 @@ export class AfterPhotosScene {
     if (!order) return;
 
     const slots = ((order.service as any)?.photoSlots as PhotoSlot[] | undefined) ?? DEFAULT_AFTER_SLOTS;
-    const beforePhotos: string[] = order.report?.photosBefore ?? [];
-    const afterPhotos: string[] = order.report?.photosAfter ?? [];
+    const beforePhotos: Record<string, string[]> =
+      ((order.report?.photosBeforeBySlot as any) ?? {});
+    const afterPhotos: Record<string, string[]> =
+      ((order.report?.photosAfterBySlot as any) ?? {});
+
+    // Ініціалізуємо вибраний слот у сесії
+    ctx.session = ctx.session || {};
+    if (!ctx.session.selectedAfterPhotoSlot) {
+      ctx.session.selectedAfterPhotoSlot = slots[0]?.key;
+    }
 
     const msg =
       `📸 <b>Фото «після»</b>\n\n` +
       `Завантажте фото «після» відповідно до слотів «до».\n` +
       `Рекомендується використовувати Before Photo як reference для максимального однакового ракурсу.\n\n` +
-      `📸 Before Photo: ${beforePhotos.length} шт.\n` +
-      `📸 After Photo: ${afterPhotos.length} шт.\n\n` +
+      `📸 Before Photo: ${Object.values(beforePhotos).flat().length} шт.\n` +
+      `📸 After Photo: ${Object.values(afterPhotos).flat().length} шт.\n\n` +
+      `Статус слотів:\n` +
       slots.map((s, i) => {
-        const status = afterPhotos.length >= s.minPhotos ? '✅' : '⬜';
-        return `${status} ${i + 1}. <b>${s.name}</b>\n   ${s.instruction}`;
+        const count = (afterPhotos[s.key] ?? []).length;
+        const ok = count >= s.minPhotos;
+        return `${ok ? '✅' : '⬜'} ${i + 1}. <b>${s.name}</b> (${count}/${s.minPhotos})\n   ${s.instruction}`;
       }).join('\n\n');
 
     await ctx.reply(msg, { parse_mode: 'HTML' });
 
     await ctx.reply(ExecutorConst.PhotoUploadAfter, {
-      reply_markup: Markup.inlineKeyboard(AFTER_PHOTO_BUTTONS).reply_markup,
+      reply_markup: Markup.inlineKeyboard(AFTER_PHOTO_BUTTONS(slots, afterPhotos)).reply_markup,
     });
   }
 
   /**
    * Обробка надісланого фото «після».
-   * Фото завантажується з Telegram, зберігається на диск через ImageStorageService,
-   * а в БД (Back4app) записується лише відносний шлях.
+   * Фото зберігається у поточно вибраному слоті.
    */
   @On('photo')
   async onAfterPhoto(@Ctx() ctx: ExecutorWizardContext) {
+    const order = await requireExecutorOrder(ctx, this.ordersService);
+    if (!order) return;
+
+    const slots = ((order.service as any)?.photoSlots as PhotoSlot[] | undefined) ?? DEFAULT_AFTER_SLOTS;
+    const slotKey = ctx.session?.selectedAfterPhotoSlot ?? slots[0]?.key;
+
     await handleOrderPhoto(
       ctx,
       this.imageStorage,
       this.ordersService,
       'after',
-      AFTER_PHOTO_BUTTONS,
+      slotKey,
+      AFTER_PHOTO_BUTTONS(slots, ((order.report?.photosAfterBySlot as any) ?? {})),
+    );
+  }
+
+  /** Вибір слота для завантаження фото «після». */
+  @Action(/^executor_select_after_slot_(.+)$/)
+  async onSelectSlot(@Ctx() ctx: ExecutorWizardContext) {
+    await ctx.answerCbQuery?.();
+    const slotKey = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
+    ctx.session = ctx.session || {};
+    ctx.session.selectedAfterPhotoSlot = slotKey;
+
+    const order = await requireExecutorOrder(ctx, this.ordersService);
+    if (!order) return;
+
+    const slots = ((order.service as any)?.photoSlots as PhotoSlot[] | undefined) ?? DEFAULT_AFTER_SLOTS;
+    const slot = slots.find((s) => s.key === slotKey);
+    await ctx.reply(
+      `📸 Обрано слот: <b>${slot?.name ?? slotKey}</b>\n${slot?.instruction ?? ''}\n\nНадішліть фото для цього слоту.`,
+      { parse_mode: 'HTML' },
     );
   }
 

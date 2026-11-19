@@ -171,4 +171,34 @@ export class OrdersController {
   ) {
     return this.ordersService.reviewCancellationRequest(requestId, adminId, dto.decision, dto.decisionComment);
   }
+
+  // ==================== Req 12: Client confirmation ====================
+
+  @Post(':id/client-confirm')
+  @ApiOperation({ summary: 'Клієнт підтверджує поховання (Так / Уточнення / Додати послугу)' })
+  @ApiParam({ name: 'id', description: 'ID замовлення' })
+  @ApiQuery({ name: 'telegramId', required: true, description: 'Telegram ID клієнта' })
+  @ApiQuery({ name: 'response', required: true, description: 'yes | clarification | add_service' })
+  clientConfirm(
+    @Param('id') id: string,
+    @Query('telegramId') telegramId: string,
+    @Query('response') response: 'yes' | 'clarification' | 'add_service',
+  ) {
+    return this.ordersService.confirmClientConfirmation(id, telegramId, response);
+  }
+
+  // ==================== Req 13: Additional services ====================
+
+  @Post(':id/additional-service')
+  @ApiOperation({ summary: 'Додати додаткову послугу до замовлення (Req 13)' })
+  @ApiParam({ name: 'id', description: 'ID замовлення' })
+  @ApiQuery({ name: 'telegramId', required: true, description: 'Telegram ID клієнта' })
+  @ApiQuery({ name: 'serviceName', required: true, description: 'Назва додаткової послуги' })
+  addAdditionalService(
+    @Param('id') id: string,
+    @Query('telegramId') telegramId: string,
+    @Query('serviceName') serviceName: string,
+  ) {
+    return this.ordersService.addAdditionalService(id, telegramId, serviceName);
+  }
 }

@@ -5,6 +5,8 @@ import { OrderTable } from './models/order-table';
 import { OrderRevisionTable } from './models/order-revision-table';
 import { OrderAssignmentHistoryTable } from './models/order-assignment-history-table';
 import { OrderStatusHistoryTable } from './models/order-status-history-table';
+import { OrderServiceChecklistTable } from './models/order-service-checklist-table';
+import { ServiceChecklistTable } from '../services/models/service-checklist-table';
 import { CancellationRequestStatus, CancellationRequestTable, } from './models/cancellation-request-table';
 import { ClarificationRequestTable, ClarificationStatus, } from './models/clarification-request-table';
 import {
@@ -21,10 +23,21 @@ import { Context, Telegraf } from 'telegraf';
 import { PerformersService } from '../performers/performers.service';
 import { BurialsService } from '../burials/burials.service';
 
+export interface ChecklistStep {
+  id: string;
+  title: string;
+  description?: string;
+  type: string;
+  required: boolean;
+  order: number;
+}
+
 @Injectable()
 export class OrdersService {
   private readonly orderClassName = OrderTable.TableName;
   private readonly serviceClassName = 'Service';
+  private readonly orderServiceChecklistClassName = OrderServiceChecklistTable.TableName;
+  private readonly serviceChecklistClassName = ServiceChecklistTable.TableName;
   private readonly assignmentHistoryClassName = OrderAssignmentHistoryTable.TableName;
   private readonly cancellationRequestClassName = CancellationRequestTable.TableName;
   private readonly statusHistoryClassName = OrderStatusHistoryTable.TableName;
@@ -142,6 +155,9 @@ export class OrdersService {
       changedBy: `client:${telegramId}`,
       reason: 'order_created',
     });
+
+    // Req 16: Snapshot the service checklist at order creation
+    await this.snapshotServiceChecklist(savedOrder.id!, serviceId);
 
     return this.mapOrderFields(savedOrder);
   }
@@ -281,39 +297,55 @@ export class OrdersService {
   }
 
   /**
-   * Додає ОДИН шлях до локального зображення у масив фото звіту.
+   * Додає ОДИН шлях до локального зображення у фото звіту за слотом.
    *
    * Використовується виконавцем (Telegram-бот): фото спершу зберігається
    * на диск через ImageStorageService, а в БД (Back4app) потрапляє лише шлях.
+   * Фото зберігаються як плоский масив (для сумісності зі схемою) та
+   * окремо за слотами для валідації.
    *
    * @param id       Order objectId
    * @param type     'before' | 'after'
+   * @param slotKey  Ключ слота (напр. 'front', 'left', 'right', 'monument')
    * @param filePath відносний шлях (напр. `orders/<id>/before/169...-ab.jpg`)
    */
   async addReportPhotoPath(
     id: string,
     type: 'before' | 'after',
+    slotKey: string,
     filePath: string,
   ): Promise<void> {
     const order = await this.getOrderObject(id);
 
+    const flatField =
+      type === 'before'
+        ? OrderTable.Fields.ReportPhotosBefore
+        : OrderTable.Fields.ReportPhotosAfter;
+    const slotField =
+      type === 'before'
+        ? OrderTable.Fields.ReportPhotosBeforeBySlot
+        : OrderTable.Fields.ReportPhotosAfterBySlot;
+
+    // Плоский масив для сумісності зі схемою Back4app
+    const currentFlat =
+      (order.get(flatField) as string[] | undefined) ?? [];
+    order.set(flatField, [...currentFlat, filePath]);
+
+    // Перслотне відслідковування для валідації
+    const currentBySlot =
+      (order.get(slotField) as Record<string, string[]> | undefined) ?? {};
+    const slotPhotos = currentBySlot[slotKey] ?? [];
+    const updatedBySlot = { ...currentBySlot, [slotKey]: [...slotPhotos, filePath] };
+    order.set(slotField, updatedBySlot);
+
     if (type === 'before') {
-      const current =
-        (order.get(OrderTable.Fields.ReportPhotosBefore) as
-          | string[]
-          | undefined) ?? [];
-      order.set(OrderTable.Fields.ReportPhotosBefore, [...current, filePath]);
-      order.set(OrderTable.Fields.Status, OrderStatus.InProgress);
+      // Req 12: After before photos, wait for client confirmation
+      order.set(OrderTable.Fields.Status, OrderStatus.AwaitingClientConfirmation);
+
+      // Spовіщаємо клієнта про фото «до» та просимо підтвердити поховання
+      await this.notifyClientBeforePhotos(order.id!, order);
     } else {
-      const current =
-        (order.get(OrderTable.Fields.ReportPhotosAfter) as
-          | string[]
-          | undefined) ?? [];
-      order.set(OrderTable.Fields.ReportPhotosAfter, [...current, filePath]);
-      order.set(
-        OrderTable.Fields.Status,
-        OrderStatus.AwaitingClientConfirmation,
-      );
+      order.set(OrderTable.Fields.Status, OrderStatus.AwaitingClientConfirmation);
     }
 
     await order.save();
@@ -348,6 +380,57 @@ export class OrdersService {
     await order.save();
 
     return updated[stepId].length;
+  }
+
+  /**
+   * Зберігає відповідь виконавця на крок чек-листа.
+   *
+   * @param id       Order objectId
+   * @param stepId   id кроку чек-листа
+   * @param answer   відповідь (напр. 'confirmed', 'yes', 'no', 'photo', 'text:...')
+   * @param executorId id виконавця
+   * @returns оновлений об'єкт відповідей
+   */
+  async saveChecklistAnswer(
+    id: string,
+    stepId: string,
+    answer: string,
+    executorId: string,
+  ): Promise<Record<string, { answer: string; answeredAt: Date; answeredBy: string }>> {
+    const order = await this.getOrderObject(id);
+
+    const current =
+      (order.get(OrderTable.Fields.ChecklistAnswers) as
+        | Record<string, { answer: string; answeredAt: Date; answeredBy: string }>
+        | undefined) ?? {};
+
+    current[stepId] = {
+      answer,
+      answeredAt: new Date(),
+      answeredBy: executorId,
+    };
+
+    order.set(OrderTable.Fields.ChecklistAnswers, current);
+    await order.save();
+
+    return current;
+  }
+
+  /**
+   * Отримує всі відповіді на чек-лист для замовлення.
+   *
+   * @param id Order objectId
+   * @returns об'єкт відповідей { [stepId]: { answer, answeredAt, answeredBy } }
+   */
+  async getChecklistAnswers(
+    id: string,
+  ): Promise<Record<string, { answer: string; answeredAt: Date; answeredBy: string }>> {
+    const order = await this.getOrderObject(id);
+    return (
+      (order.get(OrderTable.Fields.ChecklistAnswers) as
+        | Record<string, { answer: string; answeredAt: Date; answeredBy: string }>
+        | undefined) ?? {}
+    );
   }
 
   /**
@@ -531,12 +614,12 @@ export class OrdersService {
   }
 
   async submitForReview(orderId: string, executorId: string, comment?: string) {
-    const query = new Parse.Query(this.orderClassName);
+    // const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
-      const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+      // const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
       const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
-      if (currentStatus !== OrderStatus.InProgress || currentExecutor !== executorId) {
+      if (/*currentStatus !== OrderStatus.InProgress ||*/ currentExecutor !== executorId) {
         throw new BadRequestException('Замовлення не можна здати на перевірку');
       }
       if (comment) {
@@ -1324,6 +1407,159 @@ export class OrdersService {
     return this.mapOrderFields(saved);
   }
 
+  // ==================== Req 16: Snapshot checklist ====================
+
+  /**
+   * Зберігає копію актуальної версії чек-листа послуги у OrderServiceChecklist
+   * та встановлює посилання на замовленні. Редагування master чек-листа не
+   * впливає на вже створене замовлення.
+   */
+  async snapshotServiceChecklist(orderId: string, serviceId: string): Promise<void> {
+    try {
+      // Отримуємо чек-лист послуги
+      const query = new this.back4app.parse.Query(this.serviceChecklistClassName);
+      query.equalTo('serviceId', serviceId);
+      const results = await query.find();
+
+      let version = 1;
+      let steps: any[] = [];
+
+      if (results.length > 0) {
+        const sc = results[0];
+        version = sc.get('version') as number ?? 1;
+        steps = sc.get('steps') as any[] ?? [];
+      }
+
+      const snapshot = new this.back4app.parse.Query(this.orderServiceChecklistClassName);
+      // Create new OrderServiceChecklist object
+      const osc = new this.back4app.parse.Object(this.orderServiceChecklistClassName);
+      osc.set(OrderServiceChecklistTable.Fields.OrderId, orderId);
+      osc.set(OrderServiceChecklistTable.Fields.ServiceChecklistId, serviceId);
+      osc.set(OrderServiceChecklistTable.Fields.Version, version);
+      osc.set(OrderServiceChecklistTable.Fields.Snapshot, { version, steps });
+      osc.set(OrderServiceChecklistTable.Fields.CreatedAt, new Date());
+      await osc.save();
+
+      // Оновлюємо замовлення: посилання на чек-лист та версію
+      const order = await this.getOrderObject(orderId);
+      order.set(OrderTable.Fields.ServiceChecklistId, serviceId);
+      order.set(OrderTable.Fields.ChecklistVersion, version);
+      order.set(OrderTable.Fields.Checklist, { version, steps });
+      await order.save();
+    } catch (error) {
+      console.error('Помилка створення сніпшоту чек-листа:', error);
+    }
+  }
+
+  // ==================== Req 12: Client confirmation ====================
+
+  /**
+   * Клієнт підтверджує, що поховання знайдено правильно.
+   * Статус: AwaitingClientConfirmation → InProgress.
+   */
+  async confirmClientConfirmation(
+    orderId: string,
+    clientTelegramId: string,
+    response: 'yes' | 'clarification' | 'add_service',
+  ): Promise<void> {
+    const order = await this.getOrderObject(orderId);
+    const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+    const ownerTg = order.get(OrderTable.Fields.TelegramId) as string;
+    if (ownerTg !== clientTelegramId) {
+      throw new ForbiddenException('Це не ваше замовлення');
+    }
+    if (currentStatus !== OrderStatus.AwaitingClientConfirmation) {
+      throw new BadRequestException('Замовлення не очікує на підтвердження клієнтом');
+    }
+
+    order.set(OrderTable.Fields.ClientConfirmationResponse, response);
+    order.set(OrderTable.Fields.ClientConfirmedAt, new Date());
+    order.set(OrderTable.Fields.ClientConfirmedBy, clientTelegramId);
+
+    if (response === 'yes') {
+      order.set(OrderTable.Fields.Status, OrderStatus.InProgress);
+    } else if (response === 'clarification') {
+      order.set(OrderTable.Fields.Status, OrderStatus.PendingClarification);
+    } else if (response === 'add_service') {
+      // Залишаємо в AwaitingClientConfirmation, клієнт обере додаткову послугу
+      order.set(OrderTable.Fields.Status, OrderStatus.AwaitingClientConfirmation);
+    }
+
+    await order.save();
+    await this.recordStatusHistory({
+      orderId,
+      fromStatus: currentStatus,
+      toStatus: order.get(OrderTable.Fields.Status) as OrderStatus,
+      changedBy: `client:${clientTelegramId}`,
+      reason: 'client_confirmation',
+      comment: response,
+    });
+  }
+
+  /**
+   * Додає додаткову послугу до поточного замовлення.
+   */
+  async addAdditionalService(
+    orderId: string,
+    clientTelegramId: string,
+    serviceName: string,
+  ): Promise<void> {
+    const order = await this.getOrderObject(orderId);
+    const ownerTg = order.get(OrderTable.Fields.TelegramId) as string;
+    if (ownerTg !== clientTelegramId) {
+      throw new ForbiddenException('Це не ваше замовлення');
+    }
+
+    const current =
+      (order.get(OrderTable.Fields.AdditionalServices) as string[] | undefined) ?? [];
+    if (!current.includes(serviceName)) {
+      order.set(OrderTable.Fields.AdditionalServices, [...current, serviceName]);
+      await order.save();
+    }
+  }
+
+  /**
+   * Сповіщає клієнта про завантажені фото «до» та просить підтвердити поховання.
+   */
+  private async notifyClientBeforePhotos(orderId: string, order: Parse.Object): Promise<void> {
+    const clientTelegramId = order.get(OrderTable.Fields.TelegramId) as string | null;
+    if (!clientTelegramId) return;
+
+    const service = order.get(OrderTable.Fields.Service) as
+      | { id: string; name: string; price: number }
+      | undefined;
+    const burialId = order.get(OrderTable.Fields.BurialId) as string | undefined;
+    const photosBefore = order.get(OrderTable.Fields.ReportPhotosBefore) as string[] | undefined;
+
+    const text =
+      `📸 <b>Фото «до» завантажено за замовленням №${orderId}</b>\n\n` +
+      `📌 Послуга: ${service?.name ?? '—'}\n` +
+      `🪦 Місце поховання: ${burialId ?? '—'}\n\n` +
+      `Виконавець знайшов поховання та завантажив фото.\n` +
+      `Будь ласка, підтвердьте, що це правильне поховання:`;
+
+    const options = {
+      parse_mode: 'HTML',
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: 'Так, це правильне поховання', callback_data: `client_confirm_yes_${orderId}` },
+            { text: 'Потрібне уточнення', callback_data: `client_confirm_clarify_${orderId}` },
+          ],
+          [
+            { text: 'Додати послугу', callback_data: `client_confirm_addservice_${orderId}` },
+          ],
+        ],
+      },
+    };
+
+    try {
+      await this.clientBot.telegram.sendMessage(clientTelegramId, text, options as any);
+    } catch (error) {
+      console.error(`Не вдалося надіслати сповіщення клієнту ${clientTelegramId}:`, error);
+    }
+  }
+
   private mapOrderFields(order: Parse.Object) {
     const service = order.get(OrderTable.Fields.Service) as
       | Parse.Object
@@ -1378,6 +1614,12 @@ export class OrdersService {
         photosAfter: getUrls(
           order.get(OrderTable.Fields.ReportPhotosAfter) as Parse.File[] | undefined,
         ),
+        photosBeforeBySlot: order.get(OrderTable.Fields.ReportPhotosBeforeBySlot) as
+          | Record<string, string[]>
+          | null,
+        photosAfterBySlot: order.get(OrderTable.Fields.ReportPhotosAfterBySlot) as
+          | Record<string, string[]>
+          | null,
         adminComment: order.get(OrderTable.Fields.AdminComment) as string,
       },
       assignment: {
@@ -1391,6 +1633,20 @@ export class OrdersService {
         executionDeadline,
       },
       executorComment: order.get(OrderTable.Fields.ExecutorComment) as string | null,
+      checklist: order.get(OrderTable.Fields.Checklist) as { steps: ChecklistStep[] } | null,
+      serviceChecklistId: order.get(OrderTable.Fields.ServiceChecklistId) as string | null,
+      checklistVersion: order.get(OrderTable.Fields.ChecklistVersion) as number | null,
+      clientConfirmedAt: order.get(OrderTable.Fields.ClientConfirmedAt) as Date | null,
+      clientConfirmedBy: order.get(OrderTable.Fields.ClientConfirmedBy) as string | null,
+      clientConfirmationResponse: order.get(OrderTable.Fields.ClientConfirmationResponse) as
+        | string
+        | null,
+      checklistAnswers: order.get(OrderTable.Fields.ChecklistAnswers) as
+        | Record<string, { answer: string; answeredAt: Date; answeredBy: string }>
+        | null,
+      checklistPhotos: order.get(OrderTable.Fields.ChecklistPhotos) as
+        | Record<string, string[]>
+        | null,
       cancellation: {
         canceledAt: order.get(OrderTable.Fields.CanceledAt) as Date | null,
         canceledBy: order.get(OrderTable.Fields.CanceledBy) as string | null,

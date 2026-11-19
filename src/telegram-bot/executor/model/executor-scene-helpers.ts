@@ -79,18 +79,21 @@ export async function requireExecutorOrder(
 /**
  * Завантажує фото з Telegram, зберігає на диск через `ImageStorageService`
  * та записує відносний шлях у БД через `OrdersService.addReportPhotoPath`.
+ * Фото зберігається за вказаним slotKey у відповідному типі (before/after).
  *
  * @param ctx           — контекст сцени (wizard + session).
  * @param imageStorage  — сервіс для збереження зображень.
  * @param ordersService — сервіс для роботи із замовленнями.
- * @param slot          — 'before' | 'after' — у яку папку/поле зберігати.
- * @returns кількість фото у відповідному масиві або `null` при помилці.
+ * @param type          — 'before' | 'after' — у яке поле зберігати.
+ * @param slotKey       — ключ слота (напр. 'front', 'left', 'right', 'monument').
+ * @returns оновлену кількість фото для цього слота або `null` при помилці.
  */
 export async function saveOrderPhoto(
   ctx: ExecutorWizardContext,
   imageStorage: ImageStorageService,
   ordersService: OrdersService,
-  slot: 'before' | 'after',
+  type: 'before' | 'after',
+  slotKey: string,
 ): Promise<number | null> {
   const orderId = getOrderId(ctx);
   if (!orderId) return null;
@@ -101,18 +104,19 @@ export async function saveOrderPhoto(
   const result = await imageStorage.saveImage(photo.buffer, {
     kind: 'order',
     id: orderId,
-    slot,
+    slot: `${type}/${slotKey}`,
     mimeType: photo.mimeType,
   });
 
   if (!result) return null;
 
-  await ordersService.addReportPhotoPath(orderId, slot, result.path);
+  await ordersService.addReportPhotoPath(orderId, type, slotKey, result.path);
 
   const order = await loadExecutorOrder(ctx, ordersService);
-  return slot === 'before'
-    ? (order?.report?.photosBefore?.length ?? 0)
-    : (order?.report?.photosAfter?.length ?? 0);
+  const photos = order?.report?.[type === 'before' ? 'photosBefore' : 'photosAfter'] as
+    | Record<string, string[]>
+    | undefined;
+  return photos?.[slotKey]?.length ?? 0;
 }
 
 /**
@@ -123,18 +127,20 @@ export async function saveOrderPhoto(
  * @param ctx           — контекст сцени (wizard + session).
  * @param imageStorage  — сервіс для збереження зображень.
  * @param ordersService — сервіс для роботи із замовленнями.
- * @param slot          — 'before' | 'after'.
+ * @param type          — 'before' | 'after'.
+ * @param slotKey       — ключ слота, куди зберігати фото.
  * @param extraButtons  — кнопки, які показуються після збереження (напр. «Далі», «Назад»).
  */
 export async function handleOrderPhoto(
   ctx: ExecutorWizardContext,
   imageStorage: ImageStorageService,
   ordersService: OrdersService,
-  slot: 'before' | 'after',
+  type: 'before' | 'after',
+  slotKey: string,
   extraButtons: InlineButton[][],
 ): Promise<void> {
   try {
-    const count = await saveOrderPhoto(ctx, imageStorage, ordersService, slot);
+    const count = await saveOrderPhoto(ctx, imageStorage, ordersService, type, slotKey);
     if (count === null) {
       await ctx.reply(ExecutorConst.PhotoNotPhoto);
       return;
@@ -144,7 +150,7 @@ export async function handleOrderPhoto(
       reply_markup: Markup.inlineKeyboard(extraButtons).reply_markup,
     });
   } catch (error) {
-    console.error(`Помилка збереження фото «${slot}»:`, error);
+    console.error(`Помилка збереження фото «${type}/${slotKey}»:`, error);
     await ctx.reply(ExecutorConst.PhotoSaveError);
   }
 }

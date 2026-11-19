@@ -20,6 +20,7 @@ export interface ChecklistStep {
   guide?: string;
   minPhotos?: number;
   maxPhotos?: number;
+  options?: string[]; // Для типу Select
 }
 
 @Wizard(SceneConst.SERVICE_CHECKLIST_SCENE)
@@ -230,7 +231,7 @@ export class ServiceChecklistScene {
     });
   }
 
-  /** Зберігає відповідь на крок у сесії. */
+  /** Зберігає відповідь на крок у сесії та в базі даних. */
   private async recordAnswer(
     ctx: ExecutorWizardContext,
     stepId: string,
@@ -239,6 +240,17 @@ export class ServiceChecklistScene {
     ctx.session = ctx.session || {};
     ctx.session.checklistAnswers = ctx.session.checklistAnswers || {};
     ctx.session.checklistAnswers[stepId] = answer;
+
+    // Persist to database
+    const orderId = ctx.session?.orderId ?? ctx.wizard?.state?.orderId;
+    const executorId = ctx.from?.id?.toString() ?? '';
+    if (orderId && executorId) {
+      try {
+        await this.ordersService.saveChecklistAnswer(orderId, stepId, answer, executorId);
+      } catch (error) {
+        console.error('Помилка збереження відповіді чек-листа в БД:', error);
+      }
+    }
   }
 
   /** Переходить до наступного кроку. */

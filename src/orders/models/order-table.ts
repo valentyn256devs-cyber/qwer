@@ -14,8 +14,16 @@ export const OrderTable = {
     ClientPhotos: 'clientPhotos',
     ReportPhotosBefore: 'reportPhotosBefore',
     ReportPhotosAfter: 'reportPhotosAfter',
+    /** Фото «до» за слотами: { [slotKey]: string[] } */
+    ReportPhotosBeforeBySlot: 'reportPhotosBeforeBySlot',
+    /** Фото «після» за слотами: { [slotKey]: string[] } */
+    ReportPhotosAfterBySlot: 'reportPhotosAfterBySlot',
     /** Фото кроків чек-листа: { [stepId]: string[] } */
     ChecklistPhotos: 'checklistPhotos',
+    /** Відповіді на кроки чек-листа: { [stepId]: { answer: string; answeredAt: Date } } */
+    ChecklistAnswers: 'checklistAnswers',
+    /** Чек-лист кроків сервісу: { steps: ChecklistStep[] } */
+    Checklist: 'checklist',
     AdminComment: 'adminComment',
     BurialId: 'burialId',
 
@@ -47,5 +55,14 @@ export const OrderTable = {
 
     // Executor comment
     ExecutorComment: 'executorComment',
+
+    // Snapshot of service checklist at order creation/confirmation
+    ServiceChecklistId: 'serviceChecklistId',
+    ChecklistVersion: 'checklistVersion',
+
+    // Client confirmation flow
+    ClientConfirmedAt: 'clientConfirmedAt',
+    ClientConfirmedBy: 'clientConfirmedBy',
+    ClientConfirmationResponse: 'clientConfirmationResponse',
   },
 } as const;

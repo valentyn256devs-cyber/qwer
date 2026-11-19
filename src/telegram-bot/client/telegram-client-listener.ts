@@ -527,4 +527,80 @@ export class TelegramClientListener {
     }
   }
 
+  // ==================== Client confirmation callbacks ====================
+
+  @Action(/^client_confirm_yes_(.+)$/)
+  async onClientConfirmYes(@Ctx() ctx: any) {
+    await ctx.answerCbQuery?.();
+    const orderId = ctx.match?.[1] ?? '';
+    const telegramId = ctx.from?.id?.toString() ?? '';
+    if (!orderId || !telegramId) return;
+
+    try {
+      await this.ordersService.confirmClientConfirmation(orderId, telegramId, 'yes');
+      await ctx.editMessageText(
+        `✅ <b>Дякуємо! Ви підтвердили, що поховання за замовленням №${orderId} знайдено правильно.</b>\n\nВиконавець приступає до виконання робіт.`,
+        { parse_mode: 'HTML' },
+      ).catch(() => null);
+    } catch (error) {
+      await ctx.reply(`❌ Не вдалося підтвердити: ${(error as Error).message}`);
+    }
+  }
+
+  @Action(/^client_confirm_clarify_(.+)$/)
+  async onClientConfirmClarify(@Ctx() ctx: any) {
+    await ctx.answerCbQuery?.();
+    const orderId = ctx.match?.[1] ?? '';
+    const telegramId = ctx.from?.id?.toString() ?? '';
+    if (!orderId || !telegramId) return;
+
+    try {
+      await this.ordersService.confirmClientConfirmation(orderId, telegramId, 'clarification');
+      await ctx.editMessageText(
+        `❓ <b>Запит на уточнення відправлено за замовленням №${orderId}.</b>\n\nАдміністратор зв\'яжеться з вами для уточнення деталей.`,
+        { parse_mode: 'HTML' },
+      ).catch(() => null);
+    } catch (error) {
+      await ctx.reply(`❌ Не вдалося надіслати запит: ${(error as Error).message}`);
+    }
+  }
+
+  @Action(/^client_confirm_addservice_(.+)$/)
+  async onClientConfirmAddService(@Ctx() ctx: any) {
+    await ctx.answerCbQuery?.();
+    const orderId = ctx.match?.[1] ?? '';
+    const telegramId = ctx.from?.id?.toString() ?? '';
+    if (!orderId || !telegramId) return;
+
+    ctx.session = ctx.session || {};
+    ctx.session.addingAdditionalService = { orderId, telegramId };
+
+    await ctx.reply(
+      `➕ <b>Додавання послуги до замовлення №${orderId}</b>\n\n` +
+      `Введіть назву додаткової послуги (наприклад: квіти, лампадка, додаткове очищення тощо):`,
+      { parse_mode: 'HTML' },
+    ).catch(() => null);
+  }
+
+  @On('text')
+  async onAdditionalServiceText(@Ctx() ctx: any) {
+    const pending = ctx.session?.addingAdditionalService;
+    if (!pending?.orderId || !pending?.telegramId) return;
+
+    const text = ctx.message?.text?.trim();
+    if (!text) return;
+
+    ctx.session.addingAdditionalService = null;
+
+    try {
+      await this.ordersService.addAdditionalService(pending.orderId, pending.telegramId, text);
+      await ctx.reply(
+        `✅ Додаткову послугу «${text}» додано до замовлення №${pending.orderId}.`,
+        { parse_mode: 'HTML' },
+      ).catch(() => null);
+    } catch (error) {
+      await ctx.reply(`❌ Не вдалося додати послугу: ${(error as Error).message}`);
+    }
+  }
+
 }
