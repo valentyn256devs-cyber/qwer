@@ -41,6 +41,7 @@ export class DoneOrdersScene {
 
   @WizardStep(1)
   async stepShowDoneOrders(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[DoneOrdersScene] stepShowDoneOrders: Виконані замовлення | UserId:', ctx.from?.id);
     ctx.session = ctx.session || {};
     ctx.session.doneOrdersPage = 0;
     await this.showDoneOrdersPage(ctx, 0);
@@ -50,6 +51,7 @@ export class DoneOrdersScene {
 
   @Action(`${CB_PREFIX}next`)
   async onNextPage(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[DoneOrdersScene] onNextPage: Наступна сторінка | UserId:', ctx.from?.id, '| Page:', (ctx.session?.doneOrdersPage ?? 0) + 1);
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
     const current = ctx.session?.doneOrdersPage ?? 0;
@@ -58,6 +60,7 @@ export class DoneOrdersScene {
 
   @Action(`${CB_PREFIX}prev`)
   async onPrevPage(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[DoneOrdersScene] onPrevPage: Попередня сторінка | UserId:', ctx.from?.id, '| Page:', (ctx.session?.doneOrdersPage ?? 0) - 1);
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
     const current = ctx.session?.doneOrdersPage ?? 0;
@@ -67,6 +70,7 @@ export class DoneOrdersScene {
   /** Індикатор сторінки — нічого не робимо */
   @Action(`${CB_PREFIX}noop`)
   async onNoop(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[DoneOrdersScene] onNoop: Індикатор сторінки | UserId:', ctx.from?.id);
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
   }
@@ -75,6 +79,7 @@ export class DoneOrdersScene {
 
   @Action(new RegExp(`^${CB_PREFIX}open_(.+)$`))
   async onOpenOrder(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[DoneOrdersScene] onOpenOrder: Перегляд замовлення | UserId:', ctx.from?.id, '| OrderId:', ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '');
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
@@ -85,6 +90,7 @@ export class DoneOrdersScene {
   /** Назад до списку з деталей */
   @Action(`${CB_PREFIX}back`)
   async onBackToList(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[DoneOrdersScene] onBackToList: Назад до списку | UserId:', ctx.from?.id);
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
     const current = ctx.session?.doneOrdersPage ?? 0;
@@ -95,6 +101,7 @@ export class DoneOrdersScene {
 
   @Action(`${CB_PREFIX}cancel`)
   async onCancel(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[DoneOrdersScene] onCancel: Скасування перегляду | UserId:', ctx.from?.id);
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
     await ctx.reply(ExecutorConst.BackToMenuMessage, {
@@ -105,6 +112,7 @@ export class DoneOrdersScene {
 
   @Action(`${CB_PREFIX}menu`)
   async onBackToMenu(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[DoneOrdersScene] onBackToMenu: Повернення до меню | UserId:', ctx.from?.id);
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
     await ctx.reply(ExecutorConst.BackToMenuMessage, {
@@ -117,16 +125,19 @@ export class DoneOrdersScene {
 
   @Hears(ExecutorMenu.MyOrders)
   async onMyOrdersMenu(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[DoneOrdersScene] onMyOrdersMenu: Кнопка "Мої замовлення" | UserId:', ctx.from?.id);
     return ctx.scene.enter(SceneConst.MY_ORDERS_SCENE);
   }
 
   @Hears(ExecutorMenu.OpenOrders)
   async onOpenOrdersMenu(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[DoneOrdersScene] onOpenOrdersMenu: Кнопка "Відкриті замовлення" | UserId:', ctx.from?.id);
     return ctx.scene.enter(SceneConst.OPEN_ORDERS_SCENE);
   }
 
   @Hears(ExecutorMenu.DoneOrders)
   async onDoneOrdersMenu(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[DoneOrdersScene] onDoneOrdersMenu: Кнопка "Виконані замовлення" | UserId:', ctx.from?.id);
     ctx.session = ctx.session || {};
     ctx.session.doneOrdersPage = 0;
     await this.showDoneOrdersPage(ctx, 0);
@@ -134,6 +145,7 @@ export class DoneOrdersScene {
 
   @Hears(ExecutorMenu.Help)
   async onHelpMenu(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[DoneOrdersScene] onHelpMenu: Кнопка "Допомога" | UserId:', ctx.from?.id);
     await ctx.scene.leave();
     await ctx.reply(ExecutorConst.HelpPrompt, {
       reply_markup: Markup.inlineKeyboard([

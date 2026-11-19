@@ -54,6 +54,7 @@ export class AfterPhotosScene {
 
   @WizardStep(1)
   async stepAfterPhotos(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[AfterPhotosScene] stepAfterPhotos: Фото "після" | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
 
@@ -117,6 +118,7 @@ export class AfterPhotosScene {
    */
   @On('photo')
   async onAfterPhoto(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[AfterPhotosScene] onAfterPhoto: Отримано фото "після" | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId, '| SlotIndex:', ctx.session?.currentAfterSlotIndex);
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
 
@@ -214,6 +216,7 @@ export class AfterPhotosScene {
 
   @Action('executor_go_submit')
   async onGoSubmit(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[AfterPhotosScene] onGoSubmit: Відправка на перевірку | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
     await ctx.answerCbQuery?.();
 
     const order = await requireExecutorOrder(ctx, this.ordersService);
@@ -255,6 +258,7 @@ export class AfterPhotosScene {
 
   @Action('executor_back_to_selfcheck')
   async onBackToSelfcheck(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[AfterPhotosScene] onBackToSelfcheck: Назад до self-check | UserId:', ctx.from?.id);
     await ctx.answerCbQuery?.();
     return ctx.scene.enter(SceneConst.FINAL_SELFCHECK_SCENE);
   }

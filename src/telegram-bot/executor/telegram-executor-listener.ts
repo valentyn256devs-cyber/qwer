@@ -33,6 +33,7 @@ export class TelegramExecutorListener {
 
   @Start()
   async onStart(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onStart: Команда /start | UserId:', ctx.from?.id, '| Username:', ctx.from?.username);
     const telegramId = ctx.from?.id?.toString() ?? '';
 
     // Якщо виконавця ще немає в базі — запускаємо коротку анкету
@@ -58,18 +59,21 @@ export class TelegramExecutorListener {
   @Hears(ExecutorMenu.OpenOrders)
   @Command('open_orders')
   async onOpenOrders(@Ctx() ctx: SceneContext) {
+    console.log('[TelegramExecutorListener] onOpenOrders: Відкриті замовлення | UserId:', ctx.from?.id);
     await ctx.scene.enter(Scene.OPEN_ORDERS_SCENE);
   }
 
   @Hears(ExecutorMenu.MyOrders)
   @Command('my_orders')
   async onMyOrders(@Ctx() ctx: SceneContext) {
+    console.log('[TelegramExecutorListener] onMyOrders: Мої замовлення | UserId:', ctx.from?.id);
     await ctx.scene.enter(Scene.MY_ORDERS_SCENE);
   }
 
   @Hears(ExecutorMenu.DoneOrders)
   @Command('done_orders')
   async onDoneOrders(@Ctx() ctx: SceneContext) {
+    console.log('[TelegramExecutorListener] onDoneOrders: Виконані замовлення | UserId:', ctx.from?.id);
     await ctx.scene.enter(Scene.DONE_ORDERS_SCENE);
   }
 
@@ -77,6 +81,7 @@ export class TelegramExecutorListener {
 
   @Action(/^executor_confirm_order_(.+)$/)
   async onConfirmOrder(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onConfirmOrder: Підтвердження замовлення | UserId:', ctx.from?.id, '| OrderId:', ctx.match?.[1]);
     const orderId = ctx.match?.[1] ?? '';
     const executorId = ctx.from?.id?.toString() ?? '';
     await ctx.answerCbQuery?.();
@@ -119,6 +124,7 @@ export class TelegramExecutorListener {
 
   @Action(/^executor_decline_order_(.+)$/)
   async onDeclineOrder(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onDeclineOrder: Відмова від замовлення | UserId:', ctx.from?.id, '| OrderId:', ctx.match?.[1]);
     const orderId = ctx.match?.[1] ?? '';
     await ctx.answerCbQuery?.();
     if (!orderId) return;
@@ -132,6 +138,7 @@ export class TelegramExecutorListener {
   @Hears(ExecutorMenu.Help)
   @Command('help')
   async onHelp(@Ctx() ctx: SceneContext) {
+    console.log('[TelegramExecutorListener] onHelp: Допомога | UserId:', ctx.from?.id);
     await ctx.reply(ExecutorConst.HelpPrompt, {
       reply_markup: Markup.inlineKeyboard([
         [Markup.button.callback(ExecutorConst.ProblemButton, 'executor_report_problem_pick')],
@@ -145,6 +152,7 @@ export class TelegramExecutorListener {
 
   @Action(/^executor_cannot_complete_(.+)$/)
   async onCannotComplete(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onCannotComplete: Не можу виконати | UserId:', ctx.from?.id, '| OrderId:', ctx.match?.[1]);
     const orderId = ctx.match[1];
     await ctx.answerCbQuery?.();
     const buttons = (Object.values(ExecutorInabilityReason) as ExecutorInabilityReason[]).map((r) => [
@@ -159,12 +167,14 @@ export class TelegramExecutorListener {
 
   @Action('executor_cannot_complete_pick')
   async onCannotCompletePick(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onCannotCompletePick: Вибір причини неможливості | UserId:', ctx.from?.id);
     await ctx.answerCbQuery?.();
     await ctx.reply(ExecutorConst.CannotCompletePickHint);
   }
 
   @Action(/^executor_inability_(.+?)_(.+)$/)
   async onInabilityReason(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onInabilityReason: Обрано причину неможливості | UserId:', ctx.from?.id, '| OrderId:', ctx.match?.[1], '| Reason:', ctx.match?.[2]);
     const orderId = ctx.match[1];
     const reason = ctx.match[2] as ExecutorInabilityReason;
     await ctx.answerCbQuery?.();
@@ -180,6 +190,7 @@ export class TelegramExecutorListener {
 
   @On('photo')
   async onPhotoForProblem(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onPhotoForProblem: Отримано фото | UserId:', ctx.from?.id, '| Scene:', ctx.scene?.current?.id);
     if (ctx.scene?.current) return;
     const photos = ctx.message?.photo;
     const fileId = photos?.[photos.length - 1]?.file_id;
@@ -210,6 +221,7 @@ export class TelegramExecutorListener {
 
   @Action('executor_back_to_menu')
   async onBackToMenu(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onBackToMenu: Повернення до меню | UserId:', ctx.from?.id);
     await ctx.answerCbQuery?.();
     ctx.session = ctx.session || {};
     ctx.session.executorInability = null;
@@ -219,6 +231,7 @@ export class TelegramExecutorListener {
 
   @Action('executor_report_problem_pick')
   async onReportProblemPick(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onReportProblemPick: Вибір повідомлення про проблему | UserId:', ctx.from?.id);
     await ctx.answerCbQuery?.();
     await ctx.reply(ExecutorConst.ReportProblemPickHint);
   }
@@ -227,6 +240,7 @@ export class TelegramExecutorListener {
 
   @Action(/^executor_report_problem_(.+)$/)
   async onReportProblem(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onReportProblem: Повідомлення про проблему | UserId:', ctx.from?.id, '| OrderId:', ctx.match?.[1]);
     const orderId = ctx.match[1];
     await ctx.answerCbQuery?.();
     ctx.session = ctx.session || {};
@@ -243,6 +257,7 @@ export class TelegramExecutorListener {
 
   @Action(/^executor_problem_reason_(.+?)_(\d+)$/)
   async onProblemReason(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onProblemReason: Обрано причину проблеми | UserId:', ctx.from?.id, '| OrderId:', ctx.match?.[1], '| Reason:', PROBLEM_REASONS[parseInt(ctx.match?.[2] ?? '0', 10)] ?? 'Інше');
     const orderId = ctx.match[1];
     const idx = parseInt(ctx.match[2], 10);
     const reason = PROBLEM_REASONS[idx] ?? 'Інше';
@@ -262,6 +277,7 @@ export class TelegramExecutorListener {
 
   @Action('executor_problem_send')
   async onProblemSend(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onProblemSend: Надсилання звіту про проблему | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.executorProblem?.orderId);
     await ctx.answerCbQuery?.();
     const p = ctx.session?.executorProblem;
     if (!p?.orderId || !p?.reason) {
@@ -273,6 +289,7 @@ export class TelegramExecutorListener {
 
   @Action('executor_problem_skip_photos')
   async onProblemSkipPhotos(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onProblemSkipPhotos: Пропуск фото для проблеми | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.executorProblem?.orderId);
     await ctx.answerCbQuery?.();
     const p = ctx.session?.executorProblem;
     if (!p?.orderId || !p?.reason) return;
@@ -282,6 +299,7 @@ export class TelegramExecutorListener {
   @Action(/^executor_clarify/)
   @Action(/^executor_propose_update/)
   async onPlaceholderActions(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onPlaceholderActions: Placeholder дія | UserId:', ctx.from?.id, '| CallbackData:', ctx.callbackQuery?.data);
     await ctx.answerCbQuery?.(ExecutorConst.PlaceholderActionHint);
   }
 
@@ -289,6 +307,7 @@ export class TelegramExecutorListener {
 
   @Action(/^executor_respond_clarification_(.+)$/)
   async onRespondClarification(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onRespondClarification: Відповідь на уточнення | UserId:', ctx.from?.id, '| OrderId:', ctx.match?.[1]);
     const orderId = ctx.match?.[1] ?? '';
     const executorId = ctx.from?.id?.toString() ?? '';
     await ctx.answerCbQuery?.();
@@ -306,14 +325,18 @@ export class TelegramExecutorListener {
 
   @Action(/^executor_go_checklist_(.+)$/)
   async onGoChecklist(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onGoChecklist: Перехід до чек-листа | UserId:', ctx.from?.id, '| OrderId:', ctx.match?.[1]);
     const orderId = ctx.match?.[1] ?? '';
     await ctx.answerCbQuery?.();
     if (!orderId) return;
+    ctx.session = ctx.session || {};
+    ctx.session.orderId = orderId;
     return ctx.scene.enter(Scene.SERVICE_CHECKLIST_SCENE);
   }
 
   @On('text')
   async onTextForFlows(@Ctx() ctx: any) {
+    console.log('[TelegramExecutorListener] onTextForFlows: Текстове повідомлення | UserId:', ctx.from?.id, '| Text:', ctx.message?.text?.trim());
     if (ctx.scene?.current) return;
     const text = ctx.message?.text?.trim();
     if (!text) return;
@@ -368,6 +391,7 @@ export class TelegramExecutorListener {
   }
 
   private async submitProblem(ctx: any, p: any) {
+    console.log('[TelegramExecutorListener] submitProblem: Відправка проблеми адміну | UserId:', ctx.from?.id, '| OrderId:', p?.orderId, '| Reason:', p?.reason);
     const executorId = ctx.from?.id?.toString?.() ?? '';
     try {
       await this.ordersService.reportExecutorProblem({
@@ -389,6 +413,7 @@ export class TelegramExecutorListener {
   }
 
   private async submitInability(ctx: any, orderId: string, reason: ExecutorInabilityReason, comment?: string) {
+    console.log('[TelegramExecutorListener] submitInability: Відправка неможливості виконати | UserId:', ctx.from?.id, '| OrderId:', orderId, '| Reason:', reason, '| Comment:', comment);
     const executorId = ctx.from?.id?.toString?.() ?? '';
     try {
       await this.ordersService.reportExecutorInability(orderId, executorId, reason, comment);

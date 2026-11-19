@@ -11,6 +11,7 @@ export class OpenOrdersScene {
 
   @WizardStep(1)
   async stepOpenOrders(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[OpenOrdersScene] stepOpenOrders: Відкриті замовлення | UserId:', ctx.from?.id);
     await ctx.reply(ExecutorConst.OpenOrdersLoading);
 
     try {
@@ -61,6 +62,7 @@ export class OpenOrdersScene {
   /** Перегляд замовлення → картка деталей. */
   @Action(/^executor_view_order_(.+)$/)
   async onViewOrder(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[OpenOrdersScene] onViewOrder: Перегляд замовлення | UserId:', ctx.from?.id, '| OrderId:', ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '');
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await ctx.answerCbQuery?.();
     if (!orderId) return;
@@ -73,6 +75,7 @@ export class OpenOrdersScene {
   /** Взяти замовлення → сцена прийняття. */
   @Action(/^executor_accept_order_(.+)$/)
   async onAcceptOrder(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[OpenOrdersScene] onAcceptOrder: Прийняття замовлення | UserId:', ctx.from?.id, '| OrderId:', ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '');
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await ctx.answerCbQuery?.();
     if (!orderId) return;

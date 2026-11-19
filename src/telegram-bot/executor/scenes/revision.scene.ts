@@ -12,6 +12,7 @@ export class RevisionScene {
 
   @WizardStep(1)
   async stepShowRevision(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[RevisionScene] stepShowRevision: Показ ревізії | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
 
@@ -34,6 +35,7 @@ export class RevisionScene {
   /** Продовжити роботу → перехід до фото «до». */
   @Action('executor_continue_revision')
   async onContinueRevision(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[RevisionScene] onContinueRevision: Продовження виправлення | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
     await ctx.answerCbQuery?.();
     await ctx.reply(ExecutorConst.ContinueWorkMessage, { parse_mode: 'HTML' });
     return ctx.scene.enter(SceneConst.BEFORE_PHOTOS_SCENE);
@@ -42,6 +44,7 @@ export class RevisionScene {
   /** Назад до меню. */
   @Action('executor_back_to_menu')
   async onBackToMenu(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[RevisionScene] onBackToMenu: Повернення в меню | UserId:', ctx.from?.id);
     await ctx.answerCbQuery?.();
     await ctx.reply(ExecutorConst.BackToMenuMessage, { parse_mode: 'HTML' });
     return ctx.scene.leave();

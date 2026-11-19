@@ -14,6 +14,7 @@ export class TelegramAdminListener {
    */
   @Start()
   async onStart(@Ctx() ctx: Context) {
+    console.log('[Адмін-бот] Викликано функцію onStart', { userId: ctx.from?.id });
     await ctx.reply(
       OrderStepUa.AdminWelcome + OrderStepUa.AdminWelcomeDescription,
       { parse_mode: 'HTML' }
@@ -23,6 +24,7 @@ export class TelegramAdminListener {
   // 1. Admin confirms executor assignment (after executor took order + before-photos)
   @Action(/^admin_confirm_executor_(.+)$/)
   async handleAdminConfirmExecutor(@Ctx() ctx: Context) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminConfirmExecutor', { data: (ctx as any).callbackQuery?.data });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
     const orderId = ctx.callbackQuery.data.replace('admin_confirm_executor_', '');
 
@@ -48,6 +50,7 @@ export class TelegramAdminListener {
   // 2. Admin clarifies executor assignment
   @Action(/^admin_clarify_executor_(.+)$/)
   async handleAdminClarifyExecutor(@Ctx() ctx: any) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminClarifyExecutor', { data: ctx.callbackQuery?.data });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
     const orderId = ctx.callbackQuery.data.replace('admin_clarify_executor_', '');
 
@@ -69,6 +72,7 @@ export class TelegramAdminListener {
   // 3. Admin confirms before photos (specific — must be before generic admin_confirm_)
   @Action(/^admin_confirm_before_photos_(.+)$/)
   async handleAdminConfirmBeforePhotos(@Ctx() ctx: Context) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminConfirmBeforePhotos', { data: (ctx as any).callbackQuery?.data });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
     const orderId = ctx.callbackQuery.data.replace('admin_confirm_before_photos_', '');
 
@@ -94,6 +98,7 @@ export class TelegramAdminListener {
   // 4. Admin requests clarification on before photos (specific — must be before generic admin_clarify_)
   @Action(/^admin_clarify_before_photos_(.+)$/)
   async handleAdminClarifyBeforePhotos(@Ctx() ctx: any) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminClarifyBeforePhotos', { data: ctx.callbackQuery?.data });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
     const orderId = ctx.callbackQuery.data.replace('admin_clarify_before_photos_', '');
 
@@ -115,6 +120,7 @@ export class TelegramAdminListener {
   // 5. Admin confirms completion of work (specific — must be before generic admin_confirm_)
   @Action(/^admin_confirm_completion_(.+)$/)
   async handleAdminConfirmCompletion(@Ctx() ctx: Context) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminConfirmCompletion', { data: (ctx as any).callbackQuery?.data });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
     const orderId = ctx.callbackQuery.data.replace('admin_confirm_completion_', '');
 
@@ -140,6 +146,7 @@ export class TelegramAdminListener {
   // 6. Admin requests revision (specific)
   @Action(/^admin_request_revision_(.+)$/)
   async handleAdminRequestRevision(@Ctx() ctx: any) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminRequestRevision', { data: ctx.callbackQuery?.data });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
     const orderId = ctx.callbackQuery.data.replace('admin_request_revision_', '');
 
@@ -161,6 +168,7 @@ export class TelegramAdminListener {
   // 7. Обробка кнопки "Підтвердити" (клієнтське замовлення) — GENERIC, must be after specific handlers
   @Action(/^admin_confirm_(.+)_(.+)$/)
   async handleAdminConfirm(@Ctx() ctx: Context) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminConfirm', { data: (ctx as any).callbackQuery?.data });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
 
     // Витягуємо orderId та clientId за допомогою регулярного виразу
@@ -191,6 +199,7 @@ export class TelegramAdminListener {
   // 8. Обробка кнопки "Відхилити"
   @Action(/^admin_reject_(.+)_(.+)$/)
   async handleAdminReject(@Ctx() ctx: Context) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminReject', { data: (ctx as any).callbackQuery?.data });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
     const [, orderId, clientId] = ctx.callbackQuery.data.match(/^admin_reject_(.+)_(.+)$/) || [];
 
@@ -219,6 +228,7 @@ export class TelegramAdminListener {
   // 9. Admin requests clarification from executor (GENERIC — after specific admin_clarify_before_photos_)
   @Action(/^admin_clarify_(.+)_(.+)$/)
   async handleAdminClarify(@Ctx() ctx: Context) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminClarify', { data: (ctx as any).callbackQuery?.data });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
     const [, orderId, clientId] = ctx.callbackQuery.data.match(/^admin_clarify_(.+)_(.+)$/) || [];
 
@@ -243,6 +253,7 @@ export class TelegramAdminListener {
   // 10. Обробка кнопки "Надіслати на ревізію"
   @Action(/^admin_revision_(.+)$/)
   async handleAdminRevision(@Ctx() ctx: Context) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminRevision', { data: (ctx as any).callbackQuery?.data });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
     const orderId = ctx.callbackQuery.data.replace('admin_revision_', '');
 
@@ -268,6 +279,7 @@ export class TelegramAdminListener {
   // 11. Обробка кнопки "Схвалити"
   @Action(/^admin_approve_(.+)$/)
   async handleAdminApprove(@Ctx() ctx: Context) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminApprove', { data: (ctx as any).callbackQuery?.data });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
     const orderId = ctx.callbackQuery.data.replace('admin_approve_', '');
 
@@ -294,6 +306,7 @@ export class TelegramAdminListener {
   // 12. Unassign Executor - show reason selection
   @Action(/^admin_unassign_(.+)$/)
   async handleAdminUnassign(@Ctx() ctx: Context) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminUnassign', { data: (ctx as any).callbackQuery?.data });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
     const orderId = ctx.callbackQuery.data.replace('admin_unassign_', '');
 
@@ -315,6 +328,7 @@ export class TelegramAdminListener {
   // 13. Unassign Executor - confirm with reason
   @Action(/^admin_unassign_reason_(.+)_(.+)$/)
   async handleAdminUnassignReason(@Ctx() ctx: Context) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminUnassignReason', { data: (ctx as any).callbackQuery?.data });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
     const match = ctx.callbackQuery.data.match(/^admin_unassign_reason_(.+)_(.+)$/);
     if (!match) return;
@@ -342,6 +356,7 @@ export class TelegramAdminListener {
   // 14. Change Executor
   @Action(/^admin_change_executor_(.+)$/)
   async handleAdminChangeExecutor(@Ctx() ctx: Context) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminChangeExecutor', { data: (ctx as any).callbackQuery?.data });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
     const orderId = ctx.callbackQuery.data.replace('admin_change_executor_', '');
 
@@ -356,6 +371,7 @@ export class TelegramAdminListener {
   // 15. Take Over - admin becomes executor
   @Action(/^admin_take_over_(.+)$/)
   async handleAdminTakeOver(@Ctx() ctx: Context) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminTakeOver', { data: (ctx as any).callbackQuery?.data });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
     const orderId = ctx.callbackQuery.data.replace('admin_take_over_', '');
 
@@ -381,6 +397,7 @@ export class TelegramAdminListener {
   // 16. Capture admin's clarification comment for before photos / revision / executor
   @On('message')
   async handleAdminClarificationComment(@Ctx() ctx: any) {
+    console.log('[Адмін-бот] Викликано функцію handleAdminClarificationComment', { text: ctx.message?.text });
     const beforePhotosOrderId = (ctx.session as any)?.adminClarifyingBeforePhotosOrderId;
     const revisionOrderId = (ctx.session as any)?.adminRequestingRevisionOrderId;
 

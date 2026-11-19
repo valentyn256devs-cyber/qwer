@@ -44,4 +44,8 @@ import { CreatePerformerScene } from '../performer/scene/create-performer.scene'
     CreatePerformerScene,
   ],
 })
-export class TelegramExecutorModule {}
+export class TelegramExecutorModule {
+  constructor() {
+    console.log('[TelegramExecutorModule] Ініціалізація модуля бота виконавця');
+  }
+}

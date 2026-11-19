@@ -8,4 +8,8 @@ import {BurialsModule} from "../../burials/burials.module";
   imports: [ServicesModule, OrdersModule, BurialsModule],
   providers: [TelegramClientListener],
 })
-export class TelegramClientModule {}
+export class TelegramClientModule {
+  constructor() {
+    console.log('[TelegramClientModule] Ініціалізація модуля клієнтського бота');
+  }
+}

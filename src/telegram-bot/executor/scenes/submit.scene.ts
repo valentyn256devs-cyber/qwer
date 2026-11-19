@@ -15,6 +15,7 @@ export class SubmitScene {
 
   @WizardStep(1)
   async stepSubmit(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[SubmitScene] stepSubmit: Здача роботи на перевірку | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
 
@@ -29,6 +30,7 @@ export class SubmitScene {
   /** Пропустити коментар → здати роботу на перевірку. */
   @Action('executor_skip_comment')
   async onSkipComment(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[SubmitScene] onSkipComment: Пропуск коментаря | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
     await ctx.answerCbQuery?.();
     await this.submitWork(ctx);
   }
@@ -36,6 +38,7 @@ export class SubmitScene {
   /** Текстовий коментар виконавця → здати роботу на перевірку. */
   @Hears(/./)
   async onCommentText(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[SubmitScene] onCommentText: Коментар виконавця | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId, '| Text:', (ctx.message as any)?.text?.trim());
     const text = (ctx.message as any)?.text?.trim();
     if (!text) return;
     await this.submitWork(ctx, text);

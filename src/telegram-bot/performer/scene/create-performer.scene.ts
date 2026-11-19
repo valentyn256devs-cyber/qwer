@@ -25,6 +25,7 @@ export class CreatePerformerScene {
 
   @WizardStep(1)
   async stepPhone(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[CreatePerformerScene] stepPhone: Крок 1 - введення телефону | UserId:', ctx.from?.id, '| Phone:', (ctx.message as any)?.contact?.phone_number || (ctx.message as any)?.text?.trim());
     // Якщо користувач надіслав контакт — зберігаємо телефон
     const contact = (ctx.message as any)?.contact;
     if (contact?.phone_number) {
@@ -60,6 +61,7 @@ export class CreatePerformerScene {
 
   @WizardStep(2)
   async stepLocationAndSave(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[CreatePerformerScene] stepLocationAndSave: Крок 2 - локація | UserId:', ctx.from?.id, '| Lat:', (ctx.message as any)?.location?.latitude, '| Lng:', (ctx.message as any)?.location?.longitude);
     const location = (ctx.message as any)?.location;
     if (location?.latitude == null || location?.longitude == null) {
       // Якщо локацію не надіслано — повторюємо запит
@@ -77,6 +79,7 @@ export class CreatePerformerScene {
   // ==================== Збереження ====================
 
   private async savePerformer(ctx: ExecutorWizardContext): Promise<void> {
+    console.log('[CreatePerformerScene] savePerformer: Збереження виконавця | UserId:', ctx.from?.id, '| Phone:', ctx.session?.performerPhone, '| Lat:', ctx.session?.performerLatitude, '| Lng:', ctx.session?.performerLongitude);
     const telegramId = ctx.from?.id?.toString() ?? '';
     const username = ctx.from?.username;
     const phone = ctx.session?.performerPhone;
@@ -126,6 +129,7 @@ export class CreatePerformerScene {
 
   /** Надсилає запит геолокації з клавіатурою. */
   private async askLocation(ctx: ExecutorWizardContext): Promise<void> {
+    console.log('[CreatePerformerScene] askLocation: Запит геолокації | UserId:', ctx.from?.id);
     await ctx.reply(PerformerConst.LocationPrompt, {
       parse_mode: 'HTML',
       reply_markup: Markup.keyboard([

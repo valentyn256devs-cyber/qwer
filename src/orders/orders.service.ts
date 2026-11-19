@@ -801,18 +801,33 @@ export class OrdersService {
       monument: 'Памʼятник крупним планом',
     };
 
+    // Збираємо всі фото в один масив для відправки одним повідомленням (media group)
+    const mediaGroup: any[] = [];
     for (const slotKey of slotOrder) {
       const photos = photosBeforeBySlot[slotKey] ?? [];
       for (const filePath of photos) {
         try {
           const buffer = await this.getImageBuffer(filePath);
           if (!buffer) continue;
-          await this.adminBot.telegram.sendPhoto(adminChatId, { source: buffer }, {
+          mediaGroup.push({
+            type: 'photo',
+            media: { source: buffer },
             caption: `📸 ${slotNames[slotKey] ?? slotKey}`,
           });
         } catch (e) {
-          console.error(`Не вдалося надіслати фото ${filePath} адміну:`, e);
+          console.error(`Не вдалося підготувати фото ${filePath} для адміну:`, e);
         }
+      }
+    }
+
+    // Telegram дозволяє до 10 медіа в одному повідомленні (media group)
+    const CHUNK_SIZE = 10;
+    for (let i = 0; i < mediaGroup.length; i += CHUNK_SIZE) {
+      const chunk = mediaGroup.slice(i, i + CHUNK_SIZE);
+      try {
+        await this.adminBot.telegram.sendMediaGroup(adminChatId, chunk);
+      } catch (e) {
+        console.error('Не вдалося надіслати групу фото адміну:', e);
       }
     }
 
@@ -2108,18 +2123,32 @@ export class OrdersService {
       monument: 'Памʼятник крупним планом',
     };
 
+    // Збираємо всі фото в один масив для відправки одним повідомленням (media group)
+    const clientMediaGroup: any[] = [];
     for (const slotKey of slotOrder) {
       const photos = photosBeforeBySlot[slotKey] ?? [];
       for (const filePath of photos) {
         try {
           const buffer = await this.getImageBuffer(filePath);
           if (!buffer) continue;
-          await this.clientBot.telegram.sendPhoto(clientTelegramId, { source: buffer }, {
+          clientMediaGroup.push({
+            type: 'photo',
+            media: { source: buffer },
             caption: `📸 ${slotNames[slotKey] ?? slotKey}`,
           });
         } catch (e) {
-          console.error(`Не вдалося надіслати фото ${filePath} клієнту:`, e);
+          console.error(`Не вдалося підготувати фото ${filePath} для клієнта:`, e);
         }
+      }
+    }
+
+    const CHUNK_SIZE = 10;
+    for (let i = 0; i < clientMediaGroup.length; i += CHUNK_SIZE) {
+      const chunk = clientMediaGroup.slice(i, i + CHUNK_SIZE);
+      try {
+        await this.clientBot.telegram.sendMediaGroup(clientTelegramId, chunk);
+      } catch (e) {
+        console.error('Не вдалося надіслати групу фото клієнту:', e);
       }
     }
 

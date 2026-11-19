@@ -55,6 +55,7 @@ export class BeforePhotosScene {
 
   @WizardStep(1)
   async stepBeforePhotos(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[BeforePhotosScene] stepBeforePhotos: Фото "до" | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
 
@@ -132,6 +133,7 @@ export class BeforePhotosScene {
    */
   @On('photo')
   async onBeforePhoto(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[BeforePhotosScene] onBeforePhoto: Отримано фото "до" | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId, '| SlotIndex:', ctx.session?.currentBeforeSlotIndex);
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
 
@@ -236,6 +238,7 @@ export class BeforePhotosScene {
 
   @Action('executor_next_checklist')
   async onNextChecklist(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[BeforePhotosScene] onNextChecklist: Наступний чекліст / відправка на перевірку | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
     await ctx.answerCbQuery?.();
 
     const order = await requireExecutorOrder(ctx, this.ordersService);
@@ -285,6 +288,7 @@ export class BeforePhotosScene {
 
   @Action('executor_back_to_details')
   async onBackToDetails(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[BeforePhotosScene] onBackToDetails: Назад до деталей | UserId:', ctx.from?.id);
     await ctx.answerCbQuery?.();
     return ctx.scene.enter(SceneConst.ORDER_DETAILS_SCENE);
   }

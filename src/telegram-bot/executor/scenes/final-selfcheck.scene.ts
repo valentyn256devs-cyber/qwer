@@ -31,6 +31,7 @@ export class FinalSelfcheckScene {
 
   @WizardStep(1)
   async stepSelfcheck(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[FinalSelfcheckScene] stepSelfcheck: Фінальна self-check перевірка | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
 
@@ -116,6 +117,7 @@ export class FinalSelfcheckScene {
   /** Підтвердження self-check → перехід до фото «після». */
   @Action('executor_confirm_selfcheck')
   async onConfirmSelfcheck(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[FinalSelfcheckScene] onConfirmSelfcheck: Підтвердження self-check | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
     await ctx.answerCbQuery?.();
 
     // Повторна перевірка перед переходом
@@ -149,6 +151,7 @@ export class FinalSelfcheckScene {
   /** Блокована спроба підтвердження — не всі кроки виконані. */
   @Action('executor_selfcheck_blocked')
   async onSelfcheckBlocked(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[FinalSelfcheckScene] onSelfcheckBlocked: Блоковане підтвердження | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
     await ctx.answerCbQuery?.();
     await ctx.reply(
       `⚠️ Спочатку виконайте всі обовʼязкові кроки чек-листа, перш ніж підтверджувати self-check.`,
@@ -159,6 +162,7 @@ export class FinalSelfcheckScene {
   /** Назад до чекліста. */
   @Action('executor_back_to_checklist')
   async onBackToChecklist(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[FinalSelfcheckScene] onBackToChecklist: Назад до чекліста | UserId:', ctx.from?.id);
     await ctx.answerCbQuery?.();
     return ctx.scene.enter(SceneConst.SERVICE_CHECKLIST_SCENE);
   }

@@ -39,6 +39,7 @@ export class MyOrdersScene {
 
   @WizardStep(1)
   async stepShowMyOrders(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[MyOrdersScene] stepShowMyOrders: Мої замовлення | UserId:', ctx.from?.id);
     await this.showOrdersList(ctx);
   }
 
@@ -46,6 +47,7 @@ export class MyOrdersScene {
 
   @Action(`${CB_PREFIX}refresh`)
   async onRefresh(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[MyOrdersScene] onRefresh: Оновлення списку | UserId:', ctx.from?.id);
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
     await this.showOrdersList(ctx);
@@ -53,6 +55,7 @@ export class MyOrdersScene {
 
   @Action(new RegExp(`^${CB_PREFIX}open_(.+)$`))
   async onOpenOrder(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[MyOrdersScene] onOpenOrder: Перегляд замовлення | UserId:', ctx.from?.id, '| OrderId:', ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '');
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
@@ -62,6 +65,7 @@ export class MyOrdersScene {
 
   @Action(new RegExp(`^${CB_PREFIX}continue_(.+)$`))
   async onContinueOrder(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[MyOrdersScene] onContinueOrder: Продовження замовлення | UserId:', ctx.from?.id, '| OrderId:', ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '');
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
@@ -71,6 +75,7 @@ export class MyOrdersScene {
 
   @Action(`${CB_PREFIX}back`)
   async onBackToOrders(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[MyOrdersScene] onBackToOrders: Назад до списку | UserId:', ctx.from?.id);
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
     await this.showOrdersList(ctx);
@@ -78,6 +83,7 @@ export class MyOrdersScene {
 
   @Action(`${CB_PREFIX}menu`)
   async onBackToMenu(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[MyOrdersScene] onBackToMenu: Повернення до меню | UserId:', ctx.from?.id);
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
     await ctx.reply(ExecutorConst.BackToMenuMessage);
@@ -88,21 +94,25 @@ export class MyOrdersScene {
 
   @Hears(ExecutorMenu.MyOrders)
   async onMyOrdersMenu(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[MyOrdersScene] onMyOrdersMenu: Кнопка "Мої замовлення" | UserId:', ctx.from?.id);
     await this.showOrdersList(ctx);
   }
 
   @Hears(ExecutorMenu.OpenOrders)
   async onOpenOrdersMenu(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[MyOrdersScene] onOpenOrdersMenu: Кнопка "Відкриті замовлення" | UserId:', ctx.from?.id);
     return ctx.scene.enter(SceneConst.OPEN_ORDERS_SCENE);
   }
 
   @Hears(ExecutorMenu.DoneOrders)
   async onDoneOrdersMenu(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[MyOrdersScene] onDoneOrdersMenu: Кнопка "Виконані замовлення" | UserId:', ctx.from?.id);
     return ctx.scene.enter(SceneConst.DONE_ORDERS_SCENE);
   }
 
   @Hears(ExecutorMenu.Help)
   async onHelpMenu(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[MyOrdersScene] onHelpMenu: Кнопка "Допомога" | UserId:', ctx.from?.id);
     await ctx.scene.leave();
     await ctx.reply(ExecutorConst.HelpPrompt, {
       reply_markup: Markup.inlineKeyboard([
@@ -215,6 +225,7 @@ export class MyOrdersScene {
 
   /** Продовження роботи — вибір наступного кроку залежно від статусу */
   private async continueOrder(ctx: ExecutorWizardContext, orderId: string) {
+    console.log('[MyOrdersScene] continueOrder: Продовження замовлення | UserId:', ctx.from?.id, '| OrderId:', orderId);
     const executorId = ctx.from?.id?.toString() ?? '';
     const order = (await this.loadOrders(ctx)).find((o) => o.id === orderId);
 

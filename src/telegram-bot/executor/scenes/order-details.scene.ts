@@ -17,6 +17,7 @@ export class OrderDetailsScene {
 
   @WizardStep(1)
   async stepDetails(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[OrderDetailsScene] stepDetails: Деталі замовлення | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
 
@@ -65,6 +66,7 @@ export class OrderDetailsScene {
   /** Назад до списку «Мої замовлення». */
   @Action('executor_back_to_orders')
   async onBackToOrders(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[OrderDetailsScene] onBackToOrders: Назад до списку | UserId:', ctx.from?.id);
     await ctx.answerCbQuery?.();
     return ctx.scene.enter(SceneConst.MY_ORDERS_SCENE);
   }
@@ -72,6 +74,7 @@ export class OrderDetailsScene {
   /** Почати виконання замовлення. */
   @Action(/^executor_start_(.+)$/)
   async onStartExecution(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[OrderDetailsScene] onStartExecution: Початок виконання | UserId:', ctx.from?.id, '| OrderId:', ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '');
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await ctx.answerCbQuery?.();
     if (!orderId) return;

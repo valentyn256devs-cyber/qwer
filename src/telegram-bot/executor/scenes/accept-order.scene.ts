@@ -10,6 +10,7 @@ export class AcceptOrderScene {
 
   @WizardStep(1)
   async stepAccept(@Ctx() ctx: ExecutorWizardContext) {
+    console.log('[AcceptOrderScene] stepAccept: Прийняття замовлення | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId ?? ctx.wizard?.state?.orderId);
     const orderId = ctx.session?.orderId ?? ctx.wizard?.state?.orderId;
     if (!orderId) {
       await ctx.reply(ExecutorConst.OrderNotFound);
