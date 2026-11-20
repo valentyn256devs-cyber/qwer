@@ -5,13 +5,15 @@ import { ServicesModule } from './services/services.module';
 import { OrdersModule } from './orders/orders.module';
 import { TelegrafModule } from 'nestjs-telegraf';
 import { session } from 'telegraf';
-import {TelegramClientModule} from "./telegram-bot/client/telegram-client.module";
-import {TelegramExecutorModule} from "./telegram-bot/executor/telegram-executor.module";
-import {TelegramBot} from "./telegram-bot/telegram-constants";
-import {TelegramAdminModule} from "./telegram-bot/admin/telegram-admin.module";
-import {BurialsModule} from "./burials/burials.module";
-import {PerformersModule} from "./performers/performers.module";
-import {BotInitializerService} from "./telegram-bot/bot-init.service";
+import { TelegramClientModule } from "./telegram-bot/client/telegram-client.module";
+import { TelegramExecutorModule } from "./telegram-bot/executor/telegram-executor.module";
+import { TelegramBot } from "./telegram-bot/telegram-constants";
+import { TelegramAdminModule } from "./telegram-bot/admin/telegram-admin.module";
+import { BurialsModule } from "./burials/burials.module";
+import { PerformersModule } from "./performers/performers.module";
+import { BotInitializerService } from "./telegram-bot/bot-init.service";
+import { sessionRecoveryMiddleware } from "./middleware/session-recovery.middleware";
+import { RedisSessionStore, buildRedisUrl } from "./middleware/redis-session-store";
 
 @Module({
   imports: [
@@ -26,7 +28,19 @@ import {BotInitializerService} from "./telegram-bot/bot-init.service";
         botName: TelegramBot.ClientBot,
         isGlobal: true,
         token: configService.get<string>('TELEGRAM_BOT_TOKEN') ?? '',
-        middlewares: [session()],
+        middlewares: [
+          session({
+            store: new RedisSessionStore(
+              buildRedisUrl(
+                configService.get<string>('REDIS_HOST') ?? 'localhost',
+                configService.get<string>('REDIS_PORT') ?? '6379',
+                configService.get<string>('REDIS_PASSWORD') ?? undefined,
+              ),
+              'telegraf:client:session:',
+            ),
+          }),
+          sessionRecoveryMiddleware
+        ],
         include: [TelegramClientModule],
       }),
       inject: [ConfigService],
@@ -39,6 +53,19 @@ import {BotInitializerService} from "./telegram-bot/bot-init.service";
       useFactory: (configService: ConfigService) => ({
         isGlobal: true,
         token: configService.get<string>('TELEGRAM_ADMIN_BOT_TOKEN') ?? '',
+        middlewares: [
+          session({
+            store: new RedisSessionStore(
+              buildRedisUrl(
+                configService.get<string>('REDIS_HOST') ?? 'localhost',
+                configService.get<string>('REDIS_PORT') ?? '6379',
+                configService.get<string>('REDIS_PASSWORD') ?? undefined,
+              ),
+              'telegraf:admin:session:',
+            )
+          }),
+          sessionRecoveryMiddleware
+        ],
         include: [TelegramAdminModule],
       }),
       inject: [ConfigService],
@@ -52,7 +79,18 @@ import {BotInitializerService} from "./telegram-bot/bot-init.service";
         botName: TelegramBot.ExecutorBot,
         isGlobal: true,
         token: configService.get<string>('TELEGRAM_EXECUTOR_BOT_TOKEN') ?? '',
-        middlewares: [session()],
+        middlewares: [
+          session({
+            store: new RedisSessionStore(
+              buildRedisUrl(
+                configService.get<string>('REDIS_HOST') ?? 'localhost',
+                configService.get<string>('REDIS_PORT') ?? '6379',
+                configService.get<string>('REDIS_PASSWORD') ?? undefined,
+              ),
+              'telegraf:executor:session:',
+            )
+          }),
+          sessionRecoveryMiddleware],
         include: [TelegramExecutorModule],
       }),
       inject: [ConfigService],
@@ -70,4 +108,5 @@ import {BotInitializerService} from "./telegram-bot/bot-init.service";
   providers: [Back4appService, BotInitializerService],
   exports: [Back4appService],
 })
-export class AppModule {}
+export class AppModule {
+}
