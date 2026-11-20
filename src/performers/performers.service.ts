@@ -44,6 +44,15 @@ export class PerformersService {
     return this.mapPerformer(results[0]);
   }
 
+  /** Find a performer by their Parse objectId */
+  async findById(id: string): Promise<PerformerEntity | null> {
+    const query = new this.back4app.parse.Query(this.className);
+    query.equalTo('objectId', id);
+    const results = await query.find();
+    if (results.length === 0) return null;
+    return this.mapPerformer(results[0]);
+  }
+
   /** Check whether a performer with the given Telegram ID already exists */
   async exists(telegramId: string): Promise<boolean> {
     const performer = await this.findByTelegramId(telegramId);

@@ -129,6 +129,8 @@ export class TelegramAdminListener {
     try {
       const adminId = ctx.from?.id.toString() ?? '';
       await this.ordersService.confirmCompletion(orderId, adminId);
+      //
+      await this.ordersService.notifyExecutorCompletion(orderId);
 
       await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
       const message = ctx.callbackQuery.message;
@@ -289,6 +291,7 @@ export class TelegramAdminListener {
       const adminId = ctx.from?.id.toString() ?? '';
       await this.ordersService.approveCompletion(orderId, adminId);
       await this.ordersService.sendClientReport(orderId);
+      // await this.ordersService.notifyExecutorCompletion(orderId);
 
       await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
       const message = ctx.callbackQuery.message;

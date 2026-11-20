@@ -257,7 +257,8 @@ export class OrdersService {
           ...currentPhotos,
           ...parseFiles,
         ]);
-        order.set(OrderTable.Fields.Status, OrderStatus.InProgress);
+        // Req 12: After before photos, wait for client confirmation
+        order.set(OrderTable.Fields.Status, OrderStatus.AwaitingClientConfirmation);
       } else {
         /*const currentPhotos =
           order.get(OrderTable.Fields.ReportPhotosAfter) ?? [];
@@ -273,7 +274,7 @@ export class OrdersService {
           ...currentPhotos,
           ...parseFiles,
         ]);
-        order.set(OrderTable.Fields.Status, OrderStatus.AwaitingClientConfirmation); // Очікує підтвердження від клієнта
+        order.set(OrderTable.Fields.Status, OrderStatus.InProgress); // Виконавець ще в роботі — очікуємо відправки на перевірку
       }
 
       if (adminComment) {
@@ -336,7 +337,8 @@ export class OrdersService {
       // Req 12: After before photos, wait for client confirmation
       order.set(OrderTable.Fields.Status, OrderStatus.AwaitingClientConfirmation);
     } else {
-      order.set(OrderTable.Fields.Status, OrderStatus.AwaitingClientConfirmation);
+      // Фото «після» — виконавець ще в роботі, статус не змінюємо на очікування клієнта
+      order.set(OrderTable.Fields.Status, OrderStatus.InProgress);
     }
 
     await order.save();
@@ -970,21 +972,21 @@ export class OrdersService {
     const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
     if (adminChatId) {
       const orderReport = order.get('report') as any;
-      const photosBeforeBySlot: Record<string, string[]> =
+      /*const photosBeforeBySlot: Record<string, string[]> =
         ((orderReport?.photosBeforeBySlot as any) ?? {});
       const photosAfterBySlot: Record<string, string[]> =
-        ((orderReport?.photosAfterBySlot as any) ?? {});
+        ((orderReport?.photosAfterBySlot as any) ?? {});*/
 
-      const slotOrder = ['front', 'left', 'right', 'monument'];
+      /*const slotOrder = ['front', 'left', 'right', 'monument'];
       const slotNames: Record<string, string> = {
         front: 'Загальний вигляд спереду',
         left: 'Вигляд зліва',
         right: 'Вигляд справа',
         monument: 'Памʼятник крупним планом',
-      };
+      };*/
 
       // 1) Спочатку надсилаємо фото «ДО»
-      for (const slotKey of slotOrder) {
+      /*for (const slotKey of slotOrder) {
         const photos = photosBeforeBySlot[slotKey] ?? [];
         for (const filePath of photos) {
           try {
@@ -997,10 +999,10 @@ export class OrdersService {
             console.error(`Не вдалося надіслати фото ${filePath} адміну:`, e);
           }
         }
-      }
+      }*/
 
       // 2) Потім надсилаємо фото «ПІСЛЯ»
-      for (const slotKey of slotOrder) {
+      /*for (const slotKey of slotOrder) {
         const photos = photosAfterBySlot[slotKey] ?? [];
         for (const filePath of photos) {
           try {
@@ -1013,7 +1015,7 @@ export class OrdersService {
             console.error(`Не вдалося надіслати фото ${filePath} адміну:`, e);
           }
         }
-      }
+      }*/
 
       // Збираємо додаткові дані про замовлення для фінального повідомлення
       const clientName = order.get(OrderTable.Fields.ClientName) as string | undefined;
@@ -1025,7 +1027,7 @@ export class OrdersService {
         | undefined;
       const executorComment = order.get(OrderTable.Fields.ExecutorComment) as string | undefined;
       const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
-      const totalBeforePhotos = Object.values(photosBeforeBySlot).flat().length;
+      // const totalBeforePhotos = Object.values(photosBeforeBySlot).flat().length;
 
       // Отримуємо історію уточнень для замовлення
       let clarificationHistory = 'немає';
@@ -1065,7 +1067,7 @@ export class OrdersService {
         memoryPlaceHistory = 'помилка завантаження';
       }
 
-      const totalPhotos = Object.values(photosAfterBySlot).flat().length;
+      // const totalPhotos = Object.values(photosAfterBySlot).flat().length;
       const text =
         `🔍 <b>Робота на перевірку (замовлення №${orderId})</b>\n\n` +
         `👤 Клієнт: ${clientName || '—'} (<code>${clientTelegramId || '—'}</code>)\n` +
@@ -1074,8 +1076,8 @@ export class OrdersService {
         `📋 Статус: ${currentStatus}\n` +
         `💬 Коментар виконавця: ${executorComment || '—'}\n` +
         `💬 Коментар при відправці: ${comment || '—'}\n` +
-        `📸 Фото «до»: ${totalBeforePhotos} шт.\n` +
-        `📸 Фото «після»: ${totalPhotos} шт.\n` +
+        // `📸 Фото «до»: ${totalBeforePhotos} шт.\n` +
+        // `📸 Фото «після»: ${totalPhotos} шт.\n` +
         `📝 Чек-лист: ${checklist?.steps?.length ?? 0} кроків\n\n` +
         `❓ Уточнення:\n${clarificationHistory}\n\n` +
         `🏛 Оновлення «Місця пам'яті»:\n${memoryPlaceHistory}\n\n` +
@@ -1227,7 +1229,7 @@ export class OrdersService {
   }
 
   async findByExecutorId(executorId: string) {
-    this.logger.log(`[OrdersService] findByExecutorId`, { executorId });
+    // this.logger.log(`[OrdersService] findByExecutorId`, { executorId });
     const query = new this.back4app.parse.Query(this.orderClassName);
     query.equalTo(OrderTable.Fields.AssignedExecutorId, executorId);
     query.include('service');
@@ -1532,14 +1534,35 @@ export class OrdersService {
     const photosBefore = order.report.photosBefore ?? [];
     const photosAfter = order.report.photosAfter ?? [];
 
+    // Отримуємо дані про місце поховання для звіту (ТЗ §23: місце)
+    let burialPlace = '—';
+    try {
+      if (order.details?.burialId) {
+        const burial = await this.burialsService.findBurialById(order.details.burialId);
+        if (burial) {
+          const parts = [
+            burial.cemetery ?? '',
+            burial.notes ?? '',
+          ].filter(Boolean);
+          burialPlace = parts.length > 0 ? parts.join(', ') : '—';
+        }
+      }
+    } catch {
+      burialPlace = '—';
+    }
+
     const text = `🎉 <b>Вашу роботу №${orderId} виконано!</b>
 
 ` +
       `📌 <b>Послуга:</b> ${order.service?.name ?? 'Не вказано'}
 ` +
+      `📍 <b>Місце:</b> ${burialPlace}
+` +
       `📅 <b>Дата виконання:</b> ${new Date().toLocaleDateString('uk-UA')}
 ` +
       `💬 <b>Коментар виконавця:</b> ${order.executorComment ?? 'Немає коментаря'}
+` +
+      `✅ <b>Результат виконання:</b> Робота виконана та підтверджена адміністратором.
 
 ` +
       `Дякуємо, що обрали наш сервіс!`;
@@ -1581,8 +1604,37 @@ export class OrdersService {
     return order;
   }
 
+  /**
+   * Надсилає виконавцю повідомлення про успішне закінчення роботи
+   * (викликається адміном після схвалення та відправки звіту клієнту).
+   */
+  public async notifyExecutorCompletion(orderId: string): Promise<void> {
+    this.logger.log(`[OrdersService] notifyExecutorCompletion`, { orderId });
+    const order = await this.findById(orderId);
+    if (!order) return;
+
+    const executorId = order.assignment?.executorId;
+    if (!executorId) return;
+
+    let performer: any;
+    try {
+      performer = await this.performersService.findById(executorId);
+    } catch {
+      performer = null;
+    }
+    const executorTelegramId = performer?.telegramId ?? executorId;
+    if (!executorTelegramId) return;
+
+    await this.executorBot.telegram.sendMessage(
+      executorTelegramId,
+      `✅ <b>Вашу роботу №${orderId} схвалено адміністратором!</b>\n\n` +
+      `Замовлення завершено. Дякуємо за виконання.`,
+      { parse_mode: 'HTML' },
+    );
+  }
+
   async findById(id: string) {
-    this.logger.log(`[OrdersService] findById`, { id });
+    // this.logger.log(`[OrdersService] findById`, { id });
     const query = new this.back4app.parse.Query(this.orderClassName);
     query.include('service');
     try {
@@ -1595,7 +1647,7 @@ export class OrdersService {
 
   /** Req 39: Overdue is not a separate status */
   isOverdue(order: { status: OrderStatus; deadlines?: { executionDeadline?: Date | string | null } }): boolean {
-    this.logger.log(`[OrdersService] isOverdue`, { order });
+    // this.logger.log(`[OrdersService] isOverdue`, { order });
     const deadline = order.deadlines?.executionDeadline;
     if (!deadline) return false;
     const dl = deadline instanceof Date ? deadline : new Date(deadline);
@@ -1606,7 +1658,7 @@ export class OrdersService {
 
   /** Req 38: Human-readable time remaining until deadline */
   formatDeadlineRemaining(deadline?: Date | string | null): string {
-    this.logger.log(`[OrdersService] formatDeadlineRemaining`, { deadline });
+    // this.logger.log(`[OrdersService] formatDeadlineRemaining`, { deadline });
     if (!deadline) return '—';
     const dl = deadline instanceof Date ? deadline : new Date(deadline);
     if (Number.isNaN(dl.getTime())) return '—';
@@ -1624,7 +1676,7 @@ export class OrdersService {
   }
 
   formatDeadline(deadline?: Date | string | null): string {
-    this.logger.log(`[OrdersService] formatDeadline`, { deadline });
+    // this.logger.log(`[OrdersService] formatDeadline`, { deadline });
     if (!deadline) return '—';
     const dl = deadline instanceof Date ? deadline : new Date(deadline);
     if (Number.isNaN(dl.getTime())) return '—';
@@ -1982,11 +2034,102 @@ export class OrdersService {
   }
 
   /**
+   * Публічний метод для отримання буфера зображення за шляхом/оригінальною назвою файлу.
+   * Використовується сценами телеграм-бота для відправки фото користувачеві.
+   */
+  public async getImageBufferByPath(filePath: string): Promise<Buffer | null> {
+    return this.getImageBuffer(filePath);
+  }
+
+  /**
+   * Надсилає фото «до» та «після» адміністратору як медіа-групи:
+   * спочатку фото «до» (одним повідомленням), потім фото «після» (наступним повідомленням).
+   * Використовується сценою after-photos перед submitForCompletionReview.
+   */
+  public async sendPhotosToAdmin(orderId: string): Promise<void> {
+    this.logger.log(`[OrdersService] sendPhotosToAdmin`, { orderId });
+    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
+    if (!adminChatId) return;
+
+    const order = await this.findById(orderId);
+    if (!order) return;
+
+    const orderReport = (order as any)?.report as any;
+    const photosBeforeBySlot: Record<string, string[]> =
+      ((orderReport?.photosBeforeBySlot as any) ?? {});
+    const photosAfterBySlot: Record<string, string[]> =
+      ((orderReport?.photosAfterBySlot as any) ?? {});
+
+    const slotOrder = ['front', 'left', 'right', 'monument'];
+    const slotNames: Record<string, string> = {
+      front: 'Загальний вигляд спереду',
+      left: 'Вигляд зліва',
+      right: 'Вигляд справа',
+      monument: 'Памʼятник крупним планом',
+    };
+
+    // 1) Надсилаємо фото «ДО» як медіа-групу
+    const beforeMedia: any[] = [];
+    for (const slotKey of slotOrder) {
+      const photos = photosBeforeBySlot[slotKey] ?? [];
+      for (const filePath of photos) {
+        try {
+          const buffer = await this.getImageBuffer(filePath);
+          if (!buffer) continue;
+          beforeMedia.push({
+            type: 'photo',
+            media: { source: buffer },
+            caption: `📸 «До»: ${slotNames[slotKey] ?? slotKey}`,
+          });
+        } catch (e) {
+          console.error(`Не вдалося підготувати фото ${filePath} для адміну:`, e);
+        }
+      }
+    }
+    const CHUNK_SIZE = 10;
+    for (let i = 0; i < beforeMedia.length; i += CHUNK_SIZE) {
+      const chunk = beforeMedia.slice(i, i + CHUNK_SIZE);
+      try {
+        await this.adminBot.telegram.sendMediaGroup(adminChatId, chunk);
+      } catch (e) {
+        console.error('Не вдалося надіслати групу фото «до» адміну:', e);
+      }
+    }
+
+    // 2) Надсилаємо фото «ПІСЛЯ» як медіа-групу
+    const afterMedia: any[] = [];
+    for (const slotKey of slotOrder) {
+      const photos = photosAfterBySlot[slotKey] ?? [];
+      for (const filePath of photos) {
+        try {
+          const buffer = await this.getImageBuffer(filePath);
+          if (!buffer) continue;
+          afterMedia.push({
+            type: 'photo',
+            media: { source: buffer },
+            caption: `📸 «Після»: ${slotNames[slotKey] ?? slotKey}`,
+          });
+        } catch (e) {
+          console.error(`Не вдалося підготувати фото ${filePath} для адміну:`, e);
+        }
+      }
+    }
+    for (let i = 0; i < afterMedia.length; i += CHUNK_SIZE) {
+      const chunk = afterMedia.slice(i, i + CHUNK_SIZE);
+      try {
+        await this.adminBot.telegram.sendMediaGroup(adminChatId, chunk);
+      } catch (e) {
+        console.error('Не вдалося надіслати групу фото «після» адміну:', e);
+      }
+    }
+  }
+
+  /**
    * Отримує Order за ID через find (бо action «get» заборонений CLP на Back4app).
    * Кидає NotFoundException, якщо замовлення не існує.
    */
   private async getOrderObject(id: string): Promise<Parse.Object> {
-    this.logger.log(`[OrdersService] getOrderObject`, { id });
+    // this.logger.log(`[OrdersService] getOrderObject`, { id });
     const query = new this.back4app.parse.Query(this.orderClassName);
     query.equalTo('objectId', id);
     query.include('service');
@@ -2365,7 +2508,7 @@ export class OrdersService {
   }
 
   private mapOrderFields(order: Parse.Object) {
-    this.logger.log(`[OrdersService] mapOrderFields`, { orderId: order.id });
+    // this.logger.log(`[OrdersService] mapOrderFields`, { orderId: order.id });
     const service = order.get(OrderTable.Fields.Service) as
       | Parse.Object
       | undefined;

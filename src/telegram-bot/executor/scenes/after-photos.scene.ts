@@ -85,13 +85,20 @@ export class AfterPhotosScene {
     const afterPhotos: Record<string, string[]> =
       ((order.report?.photosAfterBySlot as any) ?? {});
 
-    // Перевіряємо, чи всі обовʼязкові слоти заповнені
-    const allFilled = slots.every((s) => {
+    // Підраховуємо загальну кількість фото «після» з бази
+    const totalAfterPhotos = Object.values(afterPhotos).reduce(
+      (sum, photos) => sum + (photos ?? []).length,
+      0,
+    );
+
+    // Перевіряємо, чи кожен обовʼязковий слот має хо бля одне фото
+    const allSlotsHavePhotos = slots.every((s) => {
       if (!s.required) return true;
       return ((afterPhotos[s.key] ?? []).length >= s.minPhotos);
     });
 
-    if (allFilled) {
+    // Якщо фото всі є (загалом 4 і кожен слот заповнений) — показуємо "Відправити на перевірку"
+    if (totalAfterPhotos === 4 && allSlotsHavePhotos) {
       await ctx.reply(
         `📸 <b>Фото «після»</b>\n\nВсі обовʼязкові фото завантажено.\nНадішліть на перевірку адміністратору.`,
         {
@@ -102,9 +109,11 @@ export class AfterPhotosScene {
       return;
     }
 
+    // Якщо фото немає, або їх кількість не 4, або якийсь слот не заповнений — проходимо флоу додавання фото «після»
     // Знаходимо перший незаповнений обовʼязковий слот
     ctx.session = ctx.session || {};
-    let currentSlotIndex = ctx.session.currentAfterSlotIndex ?? 0;
+    // Завжди починаємо з 0, щоб знайти перший незаповнений слот (currentAfterSlotIndex може бути застарілим)
+    let currentSlotIndex = 0;
 
     // Пропускаємо вже заповнені слоти
     while (currentSlotIndex < slots.length) {
@@ -271,6 +280,9 @@ export class AfterPhotosScene {
       );
       return;
     }
+
+    // Надсилаємо фото «до» та «після» адміністратору (медіа-групи)
+    await this.ordersService.sendPhotosToAdmin(order.id!);
 
     const executorId = ctx.from?.id?.toString() ?? '';
     await this.ordersService.submitForCompletionReview(order.id!, executorId);

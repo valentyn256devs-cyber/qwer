@@ -14,12 +14,14 @@ import { PerformersModule } from "./performers/performers.module";
 import { BotInitializerService } from "./telegram-bot/bot-init.service";
 import { sessionRecoveryMiddleware } from "./middleware/session-recovery.middleware";
 import { RedisSessionStore, buildRedisUrl } from "./middleware/redis-session-store";
+import { LoggerModule } from "./logger/logger.module";
 
 @Module({
   imports: [
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    LoggerModule,
     // 1. Клієнтський бот
     TelegrafModule.forRootAsync({
       imports: [ConfigModule],

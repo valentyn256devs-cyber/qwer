@@ -40,7 +40,7 @@ export class RevisionScene {
     this.logger.log(`[RevisionScene] onContinueRevision`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     await ctx.answerCbQuery?.();
     await ctx.reply(ExecutorConst.ContinueWorkMessage, { parse_mode: 'HTML' });
-    return ctx.scene.enter(SceneConst.BEFORE_PHOTOS_SCENE);
+    return ctx.scene.enter(SceneConst.AFTER_PHOTOS_SCENE);
   }
 
   /** Назад до меню. */

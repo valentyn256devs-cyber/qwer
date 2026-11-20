@@ -81,7 +81,7 @@ export class BurialsService {
   }
 
   async findBurialById(id: string | undefined) {
-    this.logger.log(`[BurialsService] findBurialById`, { id });
+    // this.logger.log(`[BurialsService] findBurialById`, { id });
     try {
       if (!id) {
         return undefined;

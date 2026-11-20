@@ -76,14 +76,20 @@ export class BeforePhotosScene {
       return;
     }
 
-    // Перевіряємо, чи всі обовʼязкові слоти заповнені
-    const allFilled = slots.every((s) => {
+    // Підраховуємо загальну кількість фото «до» з бази
+    const totalBeforePhotos = Object.values(photosPerSlot).reduce(
+      (sum, photos) => sum + (photos ?? []).length,
+      0,
+    );
+
+    // Перевіряємо, чи кожен обовʼязковий слот має хо бля одне фото
+    const allSlotsHavePhotos = slots.every((s) => {
       if (!s.required) return true;
       return ((photosPerSlot[s.key] ?? []).length >= s.minPhotos);
     });
 
-    if (allFilled) {
-      // Всі слоти заповнені — показуємо "Відправити на перевірку"
+    // Якщо фото всі є (загалом 4 і кожен слот заповнений) — показуємо "Відправити на перевірку"
+    if (totalBeforePhotos === 4 && allSlotsHavePhotos) {
       await ctx.reply(
         `📸 <b>Фото «до»</b>\n\nВсі обовʼязкові фото завантажено.\nНадішліть на перевірку адміністратору.`,
         {
@@ -94,9 +100,11 @@ export class BeforePhotosScene {
       return;
     }
 
+    // Якщо фото немає, або їх кількість не 4, або якийсь слот не заповнений — проходимо флоу додавання фото «до»
     // Знаходимо перший незаповнений обовʼязковий слот
     ctx.session = ctx.session || {};
-    let currentSlotIndex = ctx.session.currentBeforeSlotIndex ?? 0;
+    // Завжди починаємо з 0, щоб знайти перший незаповнений слот (currentBeforeSlotIndex може бути застарілим)
+    let currentSlotIndex = 0;
 
     // Пропускаємо вже заповнені слоти
     while (currentSlotIndex < slots.length) {
