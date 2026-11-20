@@ -965,10 +965,12 @@ export class OrdersService {
       comment,
     });
 
-    // Notify admin about completion review — send after photos first
+    // Notify admin about completion review — send before photos, then after photos, then final message
     const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
     if (adminChatId) {
       const orderReport = order.get('report') as any;
+      const photosBeforeBySlot: Record<string, string[]> =
+        ((orderReport?.photosBeforeBySlot as any) ?? {});
       const photosAfterBySlot: Record<string, string[]> =
         ((orderReport?.photosAfterBySlot as any) ?? {});
 
@@ -980,6 +982,23 @@ export class OrdersService {
         monument: 'Памʼятник крупним планом',
       };
 
+      // 1) Спочатку надсилаємо фото «ДО»
+      for (const slotKey of slotOrder) {
+        const photos = photosBeforeBySlot[slotKey] ?? [];
+        for (const filePath of photos) {
+          try {
+            const buffer = await this.getImageBuffer(filePath);
+            if (!buffer) continue;
+            await this.adminBot.telegram.sendPhoto(adminChatId, { source: buffer }, {
+              caption: `📸 «До»: ${slotNames[slotKey] ?? slotKey}`,
+            });
+          } catch (e) {
+            console.error(`Не вдалося надіслати фото ${filePath} адміну:`, e);
+          }
+        }
+      }
+
+      // 2) Потім надсилаємо фото «ПІСЛЯ»
       for (const slotKey of slotOrder) {
         const photos = photosAfterBySlot[slotKey] ?? [];
         for (const filePath of photos) {
