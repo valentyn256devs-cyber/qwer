@@ -9,6 +9,7 @@ import { OrderServiceChecklistTable } from './models/order-service-checklist-tab
 import { ServiceChecklistTable } from '../services/models/service-checklist-table';
 import { CancellationRequestStatus, CancellationRequestTable, } from './models/cancellation-request-table';
 import { ClarificationRequestTable, ClarificationStatus, } from './models/clarification-request-table';
+import { MemoryPlaceUpdateRequestTable } from '../burials/models/memory-place-update-request-table';
 import {
   ExecutorInabilityReason,
   ExecutorInabilityReasonsRequiringComment,
@@ -1014,12 +1015,70 @@ export class OrdersService {
         }
       }
 
+      // Збираємо додаткові дані про замовлення для фінального повідомлення
+      const clientName = order.get(OrderTable.Fields.ClientName) as string | undefined;
+      const clientTelegramId = order.get(OrderTable.Fields.TelegramId) as string | undefined;
+      const serviceObj = order.get(OrderTable.Fields.Service) as Parse.Object | undefined;
+      const serviceName = serviceObj?.get('name') as string | undefined;
+      const checklist = order.get(OrderTable.Fields.Checklist) as
+        | { steps: Array<{ title: string; required: boolean }> }
+        | undefined;
+      const executorComment = order.get(OrderTable.Fields.ExecutorComment) as string | undefined;
+      const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
+      const totalBeforePhotos = Object.values(photosBeforeBySlot).flat().length;
+
+      // Отримуємо історію уточнень для замовлення
+      let clarificationHistory = 'немає';
+      try {
+        const clarificationQuery = new this.back4app.parse.Query(ClarificationRequestTable.TableName);
+        clarificationQuery.equalTo(ClarificationRequestTable.Fields.OrderId, orderId);
+        const clarifications = await clarificationQuery.find();
+        if (clarifications.length > 0) {
+          clarificationHistory = clarifications
+            .map((c) => {
+              const q = c.get(ClarificationRequestTable.Fields.Question) as string;
+              const a = c.get(ClarificationRequestTable.Fields.Answer) as string | undefined;
+              const s = c.get(ClarificationRequestTable.Fields.Status) as string;
+              return `• ${q}${a ? ` → відповідь: ${a}` : ''} (${s})`;
+            })
+            .join('\n');
+        }
+      } catch {
+        clarificationHistory = 'помилка завантаження';
+      }
+
+      // Отримуємо історію оновлень «Місця пам'яті» для замовлення
+      let memoryPlaceHistory = 'немає';
+      try {
+        const mpQuery = new this.back4app.parse.Query(MemoryPlaceUpdateRequestTable.TableName);
+        mpQuery.equalTo(MemoryPlaceUpdateRequestTable.Fields.OrderId, orderId);
+        const mpRequests = await mpQuery.find();
+        if (mpRequests.length > 0) {
+          memoryPlaceHistory = mpRequests
+            .map((r) => {
+              const s = r.get(MemoryPlaceUpdateRequestTable.Fields.Status) as string;
+              return `• статус: ${s}`;
+            })
+            .join('\n');
+        }
+      } catch {
+        memoryPlaceHistory = 'помилка завантаження';
+      }
+
       const totalPhotos = Object.values(photosAfterBySlot).flat().length;
       const text =
         `🔍 <b>Робота на перевірку (замовлення №${orderId})</b>\n\n` +
-        `👤 Виконавець: <code>${executorId}</code>\n` +
-        `💬 Коментар: ${comment || '—'}\n` +
-        `📸 Фото «після»: ${totalPhotos} шт.\n\n` +
+        `👤 Клієнт: ${clientName || '—'} (<code>${clientTelegramId || '—'}</code>)\n` +
+        `👷 Виконавець: <code>${executorId}</code>\n` +
+        `🛠 Послуга: ${serviceName || '—'}\n` +
+        `📋 Статус: ${currentStatus}\n` +
+        `💬 Коментар виконавця: ${executorComment || '—'}\n` +
+        `💬 Коментар при відправці: ${comment || '—'}\n` +
+        `📸 Фото «до»: ${totalBeforePhotos} шт.\n` +
+        `📸 Фото «після»: ${totalPhotos} шт.\n` +
+        `📝 Чек-лист: ${checklist?.steps?.length ?? 0} кроків\n\n` +
+        `❓ Уточнення:\n${clarificationHistory}\n\n` +
+        `🏛 Оновлення «Місця пам'яті»:\n${memoryPlaceHistory}\n\n` +
         `Перегляньте фото «до»/«після» та чек-лист, потім підтвердьте або поверніть на доопрацювання.`;
       try {
         await this.adminBot.telegram.sendMessage(adminChatId, text, {

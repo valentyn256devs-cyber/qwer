@@ -4,13 +4,11 @@ import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
 import { Scene as SceneConst } from '../../telegram-constants';
 import { ExecutorConst } from '../model/executor-const';
-import {
-  requireExecutorOrder,
-  saveOrderPhoto,
-} from '../model/executor-scene-helpers';
+import { requireExecutorOrder, saveOrderPhoto, } from '../model/executor-scene-helpers';
 import { IMAGE_STORAGE_SERVICE } from '../../../images/image-storage.constants';
 import type { ImageStorageService } from '../../../images/image-storage.interface';
 import type { ExecutorWizardContext } from '../interfaces/executor-wizard-context.interface';
+import { OrderStatus } from "../../../orders/models/order-status";
 
 export interface PhotoSlot {
   key: string;
@@ -21,10 +19,22 @@ export interface PhotoSlot {
 }
 
 const DEFAULT_AFTER_SLOTS: PhotoSlot[] = [
-  { key: 'front', name: 'Front View', instruction: 'Зробіть фото всього поховання спереду (аналогічно Before).', required: true, minPhotos: 1 },
+  {
+    key: 'front',
+    name: 'Front View',
+    instruction: 'Зробіть фото всього поховання спереду (аналогічно Before).',
+    required: true,
+    minPhotos: 1
+  },
   { key: 'left', name: 'Left View', instruction: 'Зробіть фото зліва.', required: true, minPhotos: 1 },
   { key: 'right', name: 'Right View', instruction: 'Зробіть фото справа.', required: true, minPhotos: 1 },
-  { key: 'monument', name: 'Monument Close-up', instruction: 'Зробіть крупний план памʼятника.', required: true, minPhotos: 1 },
+  {
+    key: 'monument',
+    name: 'Monument Close-up',
+    instruction: 'Зробіть крупний план памʼятника.',
+    required: true,
+    minPhotos: 1
+  },
 ];
 
 /** Кнопки під повідомленням про завантаження фото «після». */
@@ -47,17 +57,29 @@ const AFTER_PHOTO_BUTTONS = (allFilled: boolean) => {
 @Wizard(SceneConst.AFTER_PHOTOS_SCENE)
 export class AfterPhotosScene {
   private readonly logger = new Logger(AfterPhotosScene.name);
+
   constructor(
     private readonly ordersService: OrdersService,
     @Inject(IMAGE_STORAGE_SERVICE)
     private readonly imageStorage: ImageStorageService,
-  ) {}
+  ) {
+  }
 
   @WizardStep(1)
   async stepAfterPhotos(@Ctx() ctx: ExecutorWizardContext) {
     this.logger.log(`[AfterPhotosScene] stepAfterPhotos`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
+
+    const status = order.status;
+    switch (status) {
+      case OrderStatus.Canceled:
+        await ctx.reply('Ваше замовлення скасовано.');
+        return;
+      case OrderStatus.Done:
+        await ctx.reply('Ваше замовлення вже завершено.');
+        return;
+    }
 
     const slots = ((order.service as any)?.photoSlots as PhotoSlot[] | undefined) ?? DEFAULT_AFTER_SLOTS;
     const afterPhotos: Record<string, string[]> =
@@ -119,7 +141,11 @@ export class AfterPhotosScene {
    */
   @On('photo')
   async onAfterPhoto(@Ctx() ctx: ExecutorWizardContext) {
-    this.logger.log(`[AfterPhotosScene] onAfterPhoto`, { userId: ctx.from?.id, orderId: ctx.session?.orderId, slotIndex: ctx.session?.currentAfterSlotIndex });
+    this.logger.log(`[AfterPhotosScene] onAfterPhoto`, {
+      userId: ctx.from?.id,
+      orderId: ctx.session?.orderId,
+      slotIndex: ctx.session?.currentAfterSlotIndex
+    });
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
 
