@@ -293,4 +293,21 @@ export class BeforePhotosScene {
     await ctx.answerCbQuery?.();
     return ctx.scene.enter(SceneConst.ORDER_DETAILS_SCENE);
   }
+
+  /**
+   * Обробка натискання кнопки «Далі — Service Checklist» з повідомлення
+   * про підтвердження фото «до» (надсилається адміном через confirmBeforePhotos).
+   * Виконавець може знаходитися у цій сцені, тому обробляємо колбек тут,
+   * а не лише в TelegramExecutorListener (де він може бути перехоплений сценою).
+   */
+  @Action(/^executor_go_checklist_(.+)$/)
+  async onGoChecklist(@Ctx() ctx: ExecutorWizardContext) {
+    this.logger.log(`[BeforePhotosScene] onGoChecklist`, { userId: ctx.from?.id, orderId: ((ctx as any).match as RegExpExecArray | null)?.[1] });
+    await ctx.answerCbQuery?.();
+    const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
+    if (!orderId) return;
+    ctx.session = ctx.session || {};
+    ctx.session.orderId = orderId;
+    return ctx.scene.enter(SceneConst.SERVICE_CHECKLIST_SCENE);
+  }
 }

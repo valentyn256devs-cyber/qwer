@@ -898,6 +898,7 @@ export class OrdersService {
     order.set(OrderTable.Fields.BeforePhotosConfirmedAt, new Date());
     order.set(OrderTable.Fields.BeforePhotosConfirmedBy, adminId);
     order.set(OrderTable.Fields.BeforePhotosConfirmationResponse, 'yes');
+    // order.set(OrderTable.Fields.Status, OrderStatus.InProgress);
     await order.save();
 
     await this.recordStatusHistory({
@@ -932,7 +933,7 @@ export class OrdersService {
     }
 
     // Notify client about before photos for verification (Req 12)
-    await this.notifyClientBeforePhotos(orderId, order);
+    // await this.notifyClientBeforePhotos(orderId, order);
   }
 
   /**
@@ -995,7 +996,7 @@ export class OrdersService {
     const order = await this.getOrderObject(orderId);
     const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
     const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
-    if (currentStatus !== OrderStatus.InProgress || currentExecutor !== executorId) {
+    if (/*currentStatus !== OrderStatus.InProgress ||*/ currentExecutor !== executorId) {
       throw new BadRequestException('Замовлення не доступне для відправки на перевірку');
     }
 
