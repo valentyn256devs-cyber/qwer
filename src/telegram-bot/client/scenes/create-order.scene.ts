@@ -1,5 +1,6 @@
 import {Context as Ctx, InjectBot, Wizard, WizardStep} from 'nestjs-telegraf';
 import {Context, Markup, Telegraf} from 'telegraf';
+import {Logger} from '@nestjs/common';
 import {ServicesService} from '../../../services/services.service';
 import {OrdersService} from '../../../orders/orders.service';
 import {OrderForm, type OrderWizardContext} from '../interfaces/order-wizard-context.interface';
@@ -18,6 +19,7 @@ import {ServiceResponseDto} from "../../../services/dto/service-response.dto";
 
 @Wizard(Scene.CREATE_ORDER_WIZARD)
 export class CreateOrderScene {
+  private readonly logger = new Logger(CreateOrderScene.name);
   constructor(
     private readonly ordersService: OrdersService,
     private readonly servicesService: ServicesService,
@@ -32,7 +34,7 @@ export class CreateOrderScene {
    */
   @WizardStep(1)
   async stepStart(@Ctx() ctx: OrderWizardContext) {
-    console.log('[CreateOrderScene] stepStart: Початок створення замовлення (Крок 1) | Форма:', ctx.session?.orderForm, '| PendingBurial:', ctx.session?.pendingBurial);
+    this.logger.log(`[CreateOrderScene] stepStart`, { form: ctx.session?.orderForm, pendingBurial: ctx.session?.pendingBurial });
     if (!ctx.session.orderForm) {
       ctx.session.orderForm = {};
     }
@@ -115,7 +117,7 @@ export class CreateOrderScene {
   @WizardStep(2)
   async stepHandleBurialSelection(@Ctx() ctx: OrderWizardContext) {
     const logCallbackData = ctx.has('callback_query') && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
-    console.log('[CreateOrderScene] stepHandleBurialSelection: Обробка вибору місця поховання | CallbackData:', logCallbackData);
+    this.logger.log(`[CreateOrderScene] stepHandleBurialSelection`, { callbackData: logCallbackData });
     const callbackQuery = ctx.callbackQuery;
     if (!callbackQuery || !('data' in callbackQuery)) return;
 
@@ -200,7 +202,7 @@ export class CreateOrderScene {
    * КРОК 3 (Допоміжний метод): Генерація та надсилання карток послуг
    */
   async stepShowServicesCatalog(@Ctx() ctx: OrderWizardContext) {
-    console.log('[CreateOrderScene] stepShowServicesCatalog: Відображення каталогу послуг | BurialDisplayName:', ctx.session?.orderForm?.burialDisplayName);
+    this.logger.log(`[CreateOrderScene] stepShowServicesCatalog`, { burialDisplayName: ctx.session?.orderForm?.burialDisplayName });
     const loadingMsg = await ctx.reply(OrderStepUa.LoadingServices).catch(() => null);
     const chatId = ctx.chat?.id ?? '';
     if (!ctx.session.orderForm) {
@@ -263,7 +265,7 @@ export class CreateOrderScene {
   @WizardStep(3)
   async stepHandleServiceSelection(@Ctx() ctx: OrderWizardContext) {
     const logCallbackData = ctx.has('callback_query') && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
-    console.log('[CreateOrderScene] stepHandleServiceSelection: Обробка вибору послуги | CallbackData:', logCallbackData);
+    this.logger.log(`[CreateOrderScene] stepHandleServiceSelection`, { callbackData: logCallbackData });
     const callbackQuery = ctx.callbackQuery;
     if (!callbackQuery || !('data' in callbackQuery)) return;
 
@@ -342,7 +344,7 @@ export class CreateOrderScene {
   @WizardStep(4)
   async stepAddBurial(@Ctx() ctx: OrderWizardContext) {
     const callbackData = ctx.has('callback_query') && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
-    console.log('[CreateOrderScene] stepAddBurial: Додавання поховання до замовлення | CallbackData:', callbackData, '| ServiceId:', ctx.session?.orderForm?.serviceId);
+    this.logger.log(`[CreateOrderScene] stepAddBurial`, { callbackData, serviceId: ctx.session?.orderForm?.serviceId });
     const callbackQuery = ctx.callbackQuery;
     if (callbackQuery && 'data' in callbackQuery) {
       const callbackData = callbackQuery.data;
@@ -431,7 +433,7 @@ export class CreateOrderScene {
   @WizardStep(5)
   async stepContacts(@Ctx() ctx: OrderWizardContext) {
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[CreateOrderScene] stepContacts: Введення контактних даних | Текст:', messageText, '| Форма:', ctx.session?.orderForm);
+    this.logger.log(`[CreateOrderScene] stepContacts`, { text: messageText, form: ctx.session?.orderForm });
     if (!ctx.session.orderForm) {
       ctx.session.orderForm = {};
     }
@@ -462,7 +464,7 @@ export class CreateOrderScene {
   async stepPhone(@Ctx() ctx: OrderWizardContext) {
     const messageContact = ctx.message && 'contact' in ctx.message ? ctx.message.contact : undefined;
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[CreateOrderScene] stepPhone: Отримання номера телефону | Contact:', messageContact?.phone_number, '| Текст:', messageText);
+    this.logger.log(`[CreateOrderScene] stepPhone`, { contact: messageContact?.phone_number, text: messageText });
     const msg = ctx.message;
 
     if (!ctx.session.orderForm) {
@@ -497,7 +499,7 @@ export class CreateOrderScene {
 
   @WizardStep(7)
   async stepPrepareOrder(@Ctx() ctx: OrderWizardContext) {
-    console.log('[CreateOrderScene] stepPrepareOrder: Підготовка резюме замовлення | Форма:', ctx.session?.orderForm);
+    this.logger.log(`[CreateOrderScene] stepPrepareOrder`, { form: ctx.session?.orderForm });
     if (!ctx.session.orderForm) {
       ctx.session.orderForm = {};
     }
@@ -553,7 +555,7 @@ export class CreateOrderScene {
   async stepSaveOrder(@Ctx() ctx: OrderWizardContext) {
     const logCallbackData = ctx.has('callback_query') && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[CreateOrderScene] stepSaveOrder: Збереження замовлення | CallbackData:', logCallbackData, '| Текст:', messageText, '| EditFieldTarget:', ctx.wizard.state.editFieldTarget);
+    this.logger.log(`[CreateOrderScene] stepSaveOrder`, { callbackData: logCallbackData, text: messageText, editFieldTarget: ctx.wizard.state.editFieldTarget });
     const msg = ctx.message;
 
     // --- СЦЕНАРІЙ А: Користувач ввів нове значення текстовим повідомленням (Процес редагування) ---
@@ -716,7 +718,7 @@ export class CreateOrderScene {
   }
 
   private async sendOrderToAdmin(orderId: string, state: OrderForm, telegramId: string) {
-    console.log('[CreateOrderScene] sendOrderToAdmin: Відправка замовлення адміну | OrderId:', orderId, '| TelegramId:', telegramId);
+    this.logger.log(`[CreateOrderScene] sendOrderToAdmin`, { orderId, telegramId });
     const ADMIN_BOT_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
     const burialData = await this.burialsService.findBurialById(state.burialId);
 
@@ -806,7 +808,7 @@ export class CreateOrderScene {
     callbackData: string,
     index: number
   ) {
-    console.log('[CreateOrderScene] showServiceDescription: Показ опису послуги | CallbackData:', callbackData, '| Index:', index);
+    this.logger.log(`[CreateOrderScene] showServiceDescription`, { callbackData, index });
     const callbackQuery = ctx.callbackQuery;
     // const serviceId = callbackData.replace('client_service_desc_', '');
     const parts = callbackData.split('_');
@@ -850,7 +852,7 @@ export class CreateOrderScene {
   }
 
   private fetchService(s: ServiceResponseDto, index: number) {
-    console.log('[CreateOrderScene] fetchService: Формування картки послуги | ServiceId:', s.id, '| Index:', index);
+    this.logger.log(`[CreateOrderScene] fetchService`, { serviceId: s.id, index });
     const shortDesc = s.description ? s.description.replace(/<\/?[^>]+(>|$)/g, "") : 'Опис відсутній';
     const invisibleSpacer = '<code>👉' + '‌️‌️' + ' '.repeat(26) + '</code>';
 

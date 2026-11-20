@@ -1,4 +1,5 @@
 import { Action, Ctx, Wizard, WizardStep } from 'nestjs-telegraf';
+import { Logger } from '@nestjs/common';
 import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
 import { BurialsService } from '../../../burials/burials.service';
@@ -10,6 +11,7 @@ import type { ExecutorWizardContext } from '../interfaces/executor-wizard-contex
 
 @Wizard(SceneConst.ORDER_DETAILS_SCENE)
 export class OrderDetailsScene {
+  private readonly logger = new Logger(OrderDetailsScene.name);
   constructor(
     private readonly ordersService: OrdersService,
     private readonly burialsService: BurialsService,
@@ -17,7 +19,7 @@ export class OrderDetailsScene {
 
   @WizardStep(1)
   async stepDetails(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[OrderDetailsScene] stepDetails: Деталі замовлення | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
+    this.logger.log(`[OrderDetailsScene] stepDetails`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
 
@@ -66,7 +68,7 @@ export class OrderDetailsScene {
   /** Назад до списку «Мої замовлення». */
   @Action('executor_back_to_orders')
   async onBackToOrders(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[OrderDetailsScene] onBackToOrders: Назад до списку | UserId:', ctx.from?.id);
+    this.logger.log(`[OrderDetailsScene] onBackToOrders`, { userId: ctx.from?.id });
     await ctx.answerCbQuery?.();
     return ctx.scene.enter(SceneConst.MY_ORDERS_SCENE);
   }
@@ -74,7 +76,7 @@ export class OrderDetailsScene {
   /** Почати виконання замовлення. */
   @Action(/^executor_start_(.+)$/)
   async onStartExecution(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[OrderDetailsScene] onStartExecution: Початок виконання | UserId:', ctx.from?.id, '| OrderId:', ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '');
+    this.logger.log(`[OrderDetailsScene] onStartExecution`, { userId: ctx.from?.id, orderId: ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '' });
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await ctx.answerCbQuery?.();
     if (!orderId) return;

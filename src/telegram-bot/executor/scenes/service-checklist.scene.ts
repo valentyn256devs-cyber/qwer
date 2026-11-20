@@ -1,4 +1,4 @@
-import { Inject } from '@nestjs/common';
+import { Inject, Logger } from '@nestjs/common';
 import { Action, Ctx, On, Wizard, WizardStep } from 'nestjs-telegraf';
 import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
@@ -25,6 +25,7 @@ export interface ChecklistStep {
 
 @Wizard(SceneConst.SERVICE_CHECKLIST_SCENE)
 export class ServiceChecklistScene {
+  private readonly logger = new Logger(ServiceChecklistScene.name);
   constructor(
     private readonly ordersService: OrdersService,
     @Inject(IMAGE_STORAGE_SERVICE)
@@ -33,7 +34,7 @@ export class ServiceChecklistScene {
 
   @WizardStep(1)
   async stepChecklist(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[ServiceChecklistScene] stepChecklist: Чекліст послуг | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId, '| StepIndex:', ctx.wizard?.state?.stepIndex ?? 0);
+    this.logger.log(`[ServiceChecklistScene] stepChecklist`, { userId: ctx.from?.id, orderId: ctx.session?.orderId, stepIndex: ctx.wizard?.state?.stepIndex ?? 0 });
     await this.renderCurrentStep(ctx, ctx.wizard?.state?.stepIndex ?? 0);
   }
 
@@ -41,7 +42,7 @@ export class ServiceChecklistScene {
 
   @Action(/^executor_next_step_(\d+)$/)
   async onNextStep(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[ServiceChecklistScene] onNextStep: Наступний крок | UserId:', ctx.from?.id, '| Step:', ((ctx as any).match as RegExpExecArray | null)?.[1]);
+    this.logger.log(`[ServiceChecklistScene] onNextStep`, { userId: ctx.from?.id, step: ((ctx as any).match as RegExpExecArray | null)?.[1] });
     await ctx.answerCbQuery?.();
     const next = ((ctx as any).match as RegExpExecArray | null)?.[1];
     await this.renderCurrentStep(ctx, next ? parseInt(next, 10) : 0);
@@ -49,7 +50,7 @@ export class ServiceChecklistScene {
 
   @Action(/^executor_prev_step_(\d+)$/)
   async onPrevStep(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[ServiceChecklistScene] onPrevStep: Попередній крок | UserId:', ctx.from?.id, '| Step:', ((ctx as any).match as RegExpExecArray | null)?.[1]);
+    this.logger.log(`[ServiceChecklistScene] onPrevStep`, { userId: ctx.from?.id, step: ((ctx as any).match as RegExpExecArray | null)?.[1] });
     await ctx.answerCbQuery?.();
     const prev = ((ctx as any).match as RegExpExecArray | null)?.[1];
     await this.renderCurrentStep(ctx, prev ? parseInt(prev, 10) : 0);
@@ -57,7 +58,7 @@ export class ServiceChecklistScene {
 
   @Action(/^executor_done_step_(\d+)$/)
   async onDoneStep(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[ServiceChecklistScene] onDoneStep: Крок виконано | UserId:', ctx.from?.id, '| Step:', ((ctx as any).match as RegExpExecArray | null)?.[1]);
+    this.logger.log(`[ServiceChecklistScene] onDoneStep`, { userId: ctx.from?.id, step: ((ctx as any).match as RegExpExecArray | null)?.[1] });
     await ctx.answerCbQuery?.();
     const next = ((ctx as any).match as RegExpExecArray | null)?.[1];
     await this.renderCurrentStep(ctx, next ? parseInt(next, 10) : 0);
@@ -65,7 +66,7 @@ export class ServiceChecklistScene {
 
   @Action(/^executor_check_step_(.+)$/)
   async onCheckStep(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[ServiceChecklistScene] onCheckStep: Підтвердження кроку | UserId:', ctx.from?.id, '| StepId:', ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '');
+    this.logger.log(`[ServiceChecklistScene] onCheckStep`, { userId: ctx.from?.id, stepId: ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '' });
     await ctx.answerCbQuery?.();
     const stepId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await this.recordAnswer(ctx, stepId, 'confirmed');
@@ -74,7 +75,7 @@ export class ServiceChecklistScene {
 
   @Action(/^executor_yes_step_(.+)$/)
   async onYesStep(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[ServiceChecklistScene] onYesStep: Так | UserId:', ctx.from?.id, '| StepId:', ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '');
+    this.logger.log(`[ServiceChecklistScene] onYesStep`, { userId: ctx.from?.id, stepId: ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '' });
     await ctx.answerCbQuery?.();
     const stepId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await this.recordAnswer(ctx, stepId, 'yes');
@@ -83,7 +84,7 @@ export class ServiceChecklistScene {
 
   @Action(/^executor_no_step_(.+)$/)
   async onNoStep(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[ServiceChecklistScene] onNoStep: Ні | UserId:', ctx.from?.id, '| StepId:', ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '');
+    this.logger.log(`[ServiceChecklistScene] onNoStep`, { userId: ctx.from?.id, stepId: ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '' });
     await ctx.answerCbQuery?.();
     const stepId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await this.recordAnswer(ctx, stepId, 'no');
@@ -93,7 +94,7 @@ export class ServiceChecklistScene {
   /** Кнопка «📸 Зробити фото» — чекаємо на фото від користувача. */
   @Action(/^executor_photo_step_(.+)$/)
   async onPhotoStep(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[ServiceChecklistScene] onPhotoStep: Очікування фото | UserId:', ctx.from?.id, '| StepId:', ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '');
+    this.logger.log(`[ServiceChecklistScene] onPhotoStep`, { userId: ctx.from?.id, stepId: ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '' });
     await ctx.answerCbQuery?.();
     const stepId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     ctx.session = ctx.session || {};
@@ -104,7 +105,7 @@ export class ServiceChecklistScene {
   /** Перехід до фінальної self-check перевірки. */
   @Action('executor_go_selfcheck')
   async onGoSelfcheck(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[ServiceChecklistScene] onGoSelfcheck: Перехід до self-check | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
+    this.logger.log(`[ServiceChecklistScene] onGoSelfcheck`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     await ctx.answerCbQuery?.();
     return ctx.scene.enter(SceneConst.FINAL_SELFCHECK_SCENE);
   }
@@ -113,7 +114,7 @@ export class ServiceChecklistScene {
 
   @On('photo')
   async onChecklistPhoto(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[ServiceChecklistScene] onChecklistPhoto: Отримано фото для чекліста | UserId:', ctx.from?.id, '| StepId:', ctx.session?.checklistPhotoStep);
+    this.logger.log(`[ServiceChecklistScene] onChecklistPhoto`, { userId: ctx.from?.id, stepId: ctx.session?.checklistPhotoStep });
     const stepId = ctx.session?.checklistPhotoStep;
     if (!stepId) return;
 
@@ -129,7 +130,7 @@ export class ServiceChecklistScene {
       await ctx.reply(ExecutorConst.PhotoSaved(count));
       await this.advanceOne(ctx);
     } catch (error) {
-      console.error('Помилка збереження фото чекліста:', error);
+      this.logger.error(`[ServiceChecklistScene] onChecklistPhoto`, { error: (error as Error).message });
       await ctx.reply(ExecutorConst.PhotoSaveError);
     }
   }

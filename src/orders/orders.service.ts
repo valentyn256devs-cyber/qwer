@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException, } from '@nestjs/common';
 import { Back4appService } from '../back4app/back4app.service';
 import * as Parse from 'parse/node';
 import { OrderTable } from './models/order-table';
@@ -35,6 +35,7 @@ export interface ChecklistStep {
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
   private readonly orderClassName = OrderTable.TableName;
   private readonly serviceClassName = 'Service';
   private readonly orderServiceChecklistClassName = OrderServiceChecklistTable.TableName;
@@ -93,6 +94,7 @@ export class OrdersService {
    * Зображення зберігаються як Base64 рядок (data:image/jpeg;base64,...).
    */
   private async getImageBuffer(filePath: string): Promise<Buffer | null> {
+    this.logger.log(`[OrdersService] getImageBuffer`, { filePath });
     if (!filePath) return null;
     try {
       const Parse = this.back4app.parse;
@@ -121,6 +123,7 @@ export class OrdersService {
    * Кидає NotFoundException, якщо замовлення не існує.
    */
   private async getOrderObject(id: string): Promise<Parse.Object> {
+    this.logger.log(`[OrdersService] getOrderObject`, { id });
     const query = new this.back4app.parse.Query(this.orderClassName);
     query.equalTo('objectId', id);
     query.include('service');
@@ -132,6 +135,7 @@ export class OrdersService {
   }
 
   async create(createOrderDto: CreateOrderDto) {
+    this.logger.log(`[OrdersService] create`, { createOrderDto });
     const {
       clientName,
       clientPhone,
@@ -192,6 +196,7 @@ export class OrdersService {
   }
 
   async findAll() {
+    this.logger.log(`[OrdersService] findAll`, {});
     const query = new this.back4app.parse.Query(this.orderClassName);
     query.include('service');
     query.descending('createdAt');
@@ -219,6 +224,7 @@ export class OrdersService {
   }
 
   async findByTelegramId(telegramId: string) {
+    this.logger.log(`[OrdersService] findByTelegramId`, { telegramId });
     const query = new this.back4app.parse.Query(this.orderClassName);
     query.equalTo(OrderTable.Fields.TelegramId, telegramId);
     query.include('service');
@@ -233,6 +239,7 @@ export class OrdersService {
     status: OrderStatus,
     meta?: { changedBy?: string; reason?: string; comment?: string },
   ) {
+    this.logger.log(`[OrdersService] updateStatus`, { id, status, meta });
     const query = new this.back4app.parse.Query(this.orderClassName);
     query.include('service');
     try {
@@ -261,6 +268,7 @@ export class OrdersService {
     base64Files: { name: string; base64: string }[],
     adminComment?: string,
   ) {
+    this.logger.log(`[OrdersService] uploadReportPhotos`, { id, type, base64Files, adminComment });
     // const query = new this.back4app.parse.Query(this.orderClassName);
     const query = new Parse.Query(this.orderClassName);
 
@@ -344,6 +352,7 @@ export class OrdersService {
     slotKey: string,
     filePath: string,
   ): Promise<void> {
+    this.logger.log(`[OrdersService] addReportPhotoPath`, { id, type, slotKey, filePath });
     const order = await this.getOrderObject(id);
 
     const flatField =
@@ -393,6 +402,7 @@ export class OrdersService {
     stepId: string,
     filePath: string,
   ): Promise<number> {
+    this.logger.log(`[OrdersService] addChecklistPhoto`, { id, stepId, filePath });
     const order = await this.getOrderObject(id);
 
     const current =
@@ -423,6 +433,7 @@ export class OrdersService {
     answer: string,
     executorId: string,
   ): Promise<Record<string, { answer: string; answeredAt: Date; answeredBy: string }>> {
+    this.logger.log(`[OrdersService] saveChecklistAnswer`, { id, stepId, answer, executorId });
     const order = await this.getOrderObject(id);
 
     const current =
@@ -451,6 +462,7 @@ export class OrdersService {
   async getChecklistAnswers(
     id: string,
   ): Promise<Record<string, { answer: string; answeredAt: Date; answeredBy: string }>> {
+    this.logger.log(`[OrdersService] getChecklistAnswers`, { id });
     const order = await this.getOrderObject(id);
     return (
       (order.get(OrderTable.Fields.ChecklistAnswers) as
@@ -463,6 +475,7 @@ export class OrdersService {
    * ✅ Метод ПІДТВЕРДЖЕННЯ заявки адміном + сповіщення клієнта
    */
   async confirmAndNotify(orderId: string, clientId: string) {
+    this.logger.log(`[OrdersService] confirmAndNotify`, { orderId, clientId });
     const updatedOrder = await this.updateStatus(orderId, OrderStatus.Confirmed);
 
     await this.clientBot.telegram.sendMessage(
@@ -486,6 +499,7 @@ export class OrdersService {
    * Викликається одразу після assignExecutor.
    */
   async notifyPerformersOrderTaken(orderId: string, takenByExecutorId: string) {
+    this.logger.log(`[OrdersService] notifyPerformersOrderTaken`, { orderId, takenByExecutorId });
     const notifications = this.orderNotifications.get(orderId);
     if (!notifications || notifications.length === 0) return;
 
@@ -521,6 +535,7 @@ export class OrdersService {
     clientTelegramId: string,
     orderId: string,
   ): Promise<void> {
+    this.logger.log(`[OrdersService] notifyClientOrderTaken`, { clientTelegramId, orderId });
     try {
       await this.clientBot.telegram.sendMessage(
         clientTelegramId,
@@ -539,6 +554,7 @@ export class OrdersService {
    * Надсилає ФІО, телефон виконавця та номер замовлення.
    */
   async notifyAdminAboutExecutorConfirm(orderId: string, executorTelegramId: string) {
+    this.logger.log(`[OrdersService] notifyAdminAboutExecutorConfirm`, { orderId, executorTelegramId });
     const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
     if (!adminChatId) return;
 
@@ -577,6 +593,7 @@ export class OrdersService {
     orderId: string,
     executorTelegramId: string,
   ): Promise<void> {
+    this.logger.log(`[OrdersService] notifyAdminExecutorAssigned`, { orderId, executorTelegramId });
     const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
     if (!adminChatId) return;
 
@@ -637,6 +654,7 @@ export class OrdersService {
     orderId: string,
     adminId: string,
   ): Promise<void> {
+    this.logger.log(`[OrdersService] confirmExecutorAssignment`, { orderId, adminId });
     const order = await this.getOrderObject(orderId);
     const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
     if (currentStatus !== OrderStatus.Assigned) {
@@ -681,6 +699,7 @@ export class OrdersService {
     adminId: string,
     comment: string,
   ): Promise<void> {
+    this.logger.log(`[OrdersService] clarifyExecutorAssignment`, { orderId, adminId, comment });
     const order = await this.getOrderObject(orderId);
     const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
     if (currentStatus !== OrderStatus.Assigned) {
@@ -726,6 +745,7 @@ export class OrdersService {
     comment?: string,
     photoFileIds?: string[],
   ): Promise<void> {
+    this.logger.log(`[OrdersService] respondToAdminClarification`, { orderId, executorId, comment, photoFileIds });
     const order = await this.getOrderObject(orderId);
     const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
     if (currentExecutor !== executorId) {
@@ -769,6 +789,7 @@ export class OrdersService {
     orderId: string,
     executorTelegramId: string,
   ): Promise<void> {
+    this.logger.log(`[OrdersService] notifyAdminBeforePhotos`, { orderId, executorTelegramId });
     const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
     if (!adminChatId) return;
 
@@ -867,6 +888,7 @@ export class OrdersService {
     orderId: string,
     adminId: string,
   ): Promise<void> {
+    this.logger.log(`[OrdersService] confirmBeforePhotos`, { orderId, adminId });
     const order = await this.getOrderObject(orderId);
     const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
     if (currentStatus !== OrderStatus.Assigned) {
@@ -921,6 +943,7 @@ export class OrdersService {
     adminId: string,
     comment: string,
   ): Promise<void> {
+    this.logger.log(`[OrdersService] clarifyBeforePhotos`, { orderId, adminId, comment });
     const order = await this.getOrderObject(orderId);
     const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
     if (currentStatus !== OrderStatus.Assigned) {
@@ -968,6 +991,7 @@ export class OrdersService {
     executorId: string,
     comment?: string,
   ): Promise<void> {
+    this.logger.log(`[OrdersService] submitForCompletionReview`, { orderId, executorId, comment });
     const order = await this.getOrderObject(orderId);
     const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
     const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
@@ -1054,6 +1078,7 @@ export class OrdersService {
     orderId: string,
     adminId: string,
   ): Promise<void> {
+    this.logger.log(`[OrdersService] confirmCompletion`, { orderId, adminId });
     const order = await this.getOrderObject(orderId);
     const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
     if (currentStatus !== OrderStatus.AwaitingCompletionReview) {
@@ -1090,6 +1115,7 @@ export class OrdersService {
     adminId: string,
     description: string,
   ): Promise<void> {
+    this.logger.log(`[OrdersService] requestRevision`, { orderId, adminId, description });
     const order = await this.getOrderObject(orderId);
     const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
     if (currentStatus !== OrderStatus.AwaitingCompletionReview) {
@@ -1127,6 +1153,7 @@ export class OrdersService {
    * ❌ Метод ВІДХИЛЕННЯ заявки адміном + сповіщення клієнта
    */
   async rejectAndNotify(orderId: string, clientId: string) {
+    this.logger.log(`[OrdersService] rejectAndNotify`, { orderId, clientId });
     const updatedOrder = await this.updateStatus(orderId, OrderStatus.Rejected);
 
     await this.clientBot.telegram.sendMessage(
@@ -1143,6 +1170,7 @@ export class OrdersService {
    * 🔍 Метод запиту на УТОЧНЕННЯ даних + сповіщення клієнта
    */
   async clarifyAndNotify(orderId: string, clientId: string) {
+    this.logger.log(`[OrdersService] clarifyAndNotify`, { orderId, clientId });
     const updatedOrder = await this.updateStatus(orderId, OrderStatus.PendingClarification);
 
     await this.clientBot.telegram.sendMessage(
@@ -1156,6 +1184,7 @@ export class OrdersService {
   }
 
   async findAvailable() {
+    this.logger.log(`[OrdersService] findAvailable`, {});
     const query = new this.back4app.parse.Query(this.orderClassName);
     query.equalTo(OrderTable.Fields.Status, OrderStatus.AvailableForExecutor);
     query.include('service');
@@ -1168,6 +1197,7 @@ export class OrdersService {
   }
 
   async findByExecutorId(executorId: string) {
+    this.logger.log(`[OrdersService] findByExecutorId`, { executorId });
     const query = new this.back4app.parse.Query(this.orderClassName);
     query.equalTo(OrderTable.Fields.AssignedExecutorId, executorId);
     query.include('service');
@@ -1178,6 +1208,7 @@ export class OrdersService {
   }
 
   async startExecution(orderId: string, executorId: string) {
+    this.logger.log(`[OrdersService] startExecution`, { orderId, executorId });
     const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
@@ -1196,6 +1227,7 @@ export class OrdersService {
   }
 
   async submitForReview(orderId: string, executorId: string, comment?: string) {
+    this.logger.log(`[OrdersService] submitForReview`, { orderId, executorId, comment });
     // const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
@@ -1217,6 +1249,7 @@ export class OrdersService {
   }
 
   async assignExecutor(orderId: string, executorId: string, assignedBy: string) {
+    this.logger.log(`[OrdersService] assignExecutor`, { orderId, executorId, assignedBy });
     // const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
@@ -1260,6 +1293,7 @@ export class OrdersService {
    * Причина обов'язкова. Після Unassign: assignedExecutorId = null, status = AvailableForExecutor.
    */
   async unassignExecutor(orderId: string, adminId: string, reason: UnassignReason, comment?: string) {
+    this.logger.log(`[OrdersService] unassignExecutor`, { orderId, adminId, reason, comment });
     const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
@@ -1292,6 +1326,7 @@ export class OrdersService {
    * Адмін може вибрати іншого виконавця. Прогрес не втрачається.
    */
   async changeExecutor(orderId: string, newExecutorId: string, adminId: string, reason?: string) {
+    this.logger.log(`[OrdersService] changeExecutor`, { orderId, newExecutorId, adminId, reason });
     const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
@@ -1331,6 +1366,7 @@ export class OrdersService {
    * Один користувач може мати декілька ролей: Admin + Executor.
    */
   async takeOverExecutor(orderId: string, adminId: string) {
+    this.logger.log(`[OrdersService] takeOverExecutor`, { orderId, adminId });
     const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
@@ -1370,6 +1406,7 @@ export class OrdersService {
     checklistSteps?: any[],
     photoIds?: string[],
   ) {
+    this.logger.log(`[OrdersService] revisionRequired`, { orderId, adminId, description, checklistSteps, photoIds });
     const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
@@ -1400,6 +1437,7 @@ export class OrdersService {
   }
 
   async resubmitForReview(orderId: string, executorId: string, comment?: string) {
+    this.logger.log(`[OrdersService] resubmitForReview`, { orderId, executorId, comment });
     const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
@@ -1435,6 +1473,7 @@ export class OrdersService {
   }
 
   async approveCompletion(orderId: string, adminId: string) {
+    this.logger.log(`[OrdersService] approveCompletion`, { orderId, adminId });
     const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
@@ -1453,6 +1492,7 @@ export class OrdersService {
   }
 
   async sendClientReport(orderId: string) {
+    this.logger.log(`[OrdersService] sendClientReport`, { orderId });
     const order = await this.findById(orderId);
     if (!order) {
       throw new NotFoundException('Замовлення не знайдено');
@@ -1496,6 +1536,7 @@ export class OrdersService {
   }
 
   async findById(id: string) {
+    this.logger.log(`[OrdersService] findById`, { id });
     const query = new this.back4app.parse.Query(this.orderClassName);
     query.include('service');
     try {
@@ -1508,6 +1549,7 @@ export class OrdersService {
 
   /** Req 39: Overdue is not a separate status */
   isOverdue(order: { status: OrderStatus; deadlines?: { executionDeadline?: Date | string | null } }): boolean {
+    this.logger.log(`[OrdersService] isOverdue`, { order });
     const deadline = order.deadlines?.executionDeadline;
     if (!deadline) return false;
     const dl = deadline instanceof Date ? deadline : new Date(deadline);
@@ -1518,6 +1560,7 @@ export class OrdersService {
 
   /** Req 38: Human-readable time remaining until deadline */
   formatDeadlineRemaining(deadline?: Date | string | null): string {
+    this.logger.log(`[OrdersService] formatDeadlineRemaining`, { deadline });
     if (!deadline) return '—';
     const dl = deadline instanceof Date ? deadline : new Date(deadline);
     if (Number.isNaN(dl.getTime())) return '—';
@@ -1535,6 +1578,7 @@ export class OrdersService {
   }
 
   formatDeadline(deadline?: Date | string | null): string {
+    this.logger.log(`[OrdersService] formatDeadline`, { deadline });
     if (!deadline) return '—';
     const dl = deadline instanceof Date ? deadline : new Date(deadline);
     if (Number.isNaN(dl.getTime())) return '—';
@@ -1544,6 +1588,7 @@ export class OrdersService {
   // ==================== Req 38-39: Deadline & Overdue helpers ====================
 
   async clientCancelOrder(orderId: string, telegramId: string, reason?: string, comment?: string) {
+    this.logger.log(`[OrdersService] clientCancelOrder`, { orderId, telegramId, reason, comment });
     const query = new Parse.Query(this.orderClassName);
     const order = await this.getOrderObject(orderId);
     const status = order.get(OrderTable.Fields.Status) as OrderStatus;
@@ -1561,6 +1606,7 @@ export class OrdersService {
 
   /** Req 42,45: Create cancellation request for post-assignment stages */
   async createCancellationRequest(orderId: string, requestedBy: string, reason: string, comment?: string) {
+    this.logger.log(`[OrdersService] createCancellationRequest`, { orderId, requestedBy, reason, comment });
     if (!reason?.trim()) throw new BadRequestException('Причина скасування обовʼязкова');
     const query = new Parse.Query(this.orderClassName);
     const order = await this.getOrderObject(orderId);
@@ -1588,6 +1634,7 @@ export class OrdersService {
     reason: ExecutorInabilityReason,
     comment?: string,
   ) {
+    this.logger.log(`[OrdersService] reportExecutorInability`, { orderId, executorId, reason, comment });
     if (!reason) throw new BadRequestException('Причина обовʼязкова');
     if (ExecutorInabilityReasonsRequiringComment.includes(reason) && !comment?.trim()) {
       throw new BadRequestException('Для обраної причини коментар обовʼязковий');
@@ -1636,6 +1683,7 @@ export class OrdersService {
     comment?: string,
     commentForClient?: string,
   ) {
+    this.logger.log(`[OrdersService] adminCancelOrder`, { orderId, adminId, reason, comment, commentForClient });
     if (!reason?.trim()) throw new BadRequestException('Причина скасування обовʼязкова');
     const query = new Parse.Query(this.orderClassName);
     const order = await this.getOrderObject(orderId);
@@ -1653,6 +1701,7 @@ export class OrdersService {
     decision: 'approve' | 'reject',
     decisionComment?: string,
   ) {
+    this.logger.log(`[OrdersService] reviewCancellationRequest`, { requestId, adminId, decision, decisionComment });
     const reqQuery = new Parse.Query(this.cancellationRequestClassName);
     reqQuery.equalTo('objectId', requestId);
     const reqResults = await reqQuery.find();
@@ -1705,6 +1754,7 @@ export class OrdersService {
     comment?: string;
     photoFileIds?: string[];
   }) {
+    this.logger.log(`[OrdersService] reportExecutorProblem`, { params });
     const order = await this.findById(params.orderId);
     if (!order) throw new NotFoundException('Замовлення не знайдено');
     try {
@@ -1753,6 +1803,7 @@ export class OrdersService {
    * Message ID зберігається для подальшого оновлення/видалення, коли замовлення хтось візьме.
    */
   private async notifyPerformersAboutOrder(orderId: string, order: any) {
+    this.logger.log(`[OrdersService] notifyPerformersAboutOrder`, { orderId, order });
     let performers;
     try {
       performers = await this.performersService.findAllActive();
@@ -1847,6 +1898,7 @@ export class OrdersService {
 
   /** Екранує HTML-спецсимволи, щоб динамічний контент не ламав розмітку Telegram */
   private escapeHtml(value?: string | null): string {
+    this.logger.log(`[OrdersService] escapeHtml`, { value });
     if (value == null) return '';
     return String(value)
       .replace(/&/g, '&')
@@ -1856,6 +1908,7 @@ export class OrdersService {
 
   /** Форматує дату у uk-UA або повертає «—» */
   private formatDate(value?: Date | string | null): string {
+    this.logger.log(`[OrdersService] formatDate`, { value });
     if (!value) return ExecutorConst.NewOrderDash;
     const date = value instanceof Date ? value : new Date(value);
     if (Number.isNaN(date.getTime())) return ExecutorConst.NewOrderDash;
@@ -1867,6 +1920,7 @@ export class OrdersService {
     birth?: string | Date | null,
     death?: string | Date | null,
   ): string {
+    this.logger.log(`[OrdersService] formatLifeYears`, { birth, death });
     const b = birth ? new Date(birth) : null;
     const d = death ? new Date(death) : null;
     const bOk = !!b && !Number.isNaN(b.getTime());
@@ -1881,6 +1935,7 @@ export class OrdersService {
 
   /** Форматує список додаткових послуг у рядок */
   private formatAdditionalServices(services?: string[]): string {
+    this.logger.log(`[OrdersService] formatAdditionalServices`, { services });
     const list = (services ?? []).map((s) => String(s).trim()).filter(Boolean);
     if (list.length === 0) return ExecutorConst.NewOrderNoAdditionalServices;
     return list.map((s) => this.escapeHtml(s)).join(', ');
@@ -1893,6 +1948,7 @@ export class OrdersService {
     reason?: string;
     comment?: string;
   }): Promise<void> {
+    this.logger.log(`[OrdersService] recordAssignmentHistory`, { params });
     const history = new Parse.Object(this.assignmentHistoryClassName);
     history.set(OrderAssignmentHistoryTable.Fields.OrderId, params.orderId);
     history.set(OrderAssignmentHistoryTable.Fields.ExecutorId, params.executorId);
@@ -1910,6 +1966,7 @@ export class OrdersService {
     reason: string;
     comment?: string;
   }): Promise<void> {
+    this.logger.log(`[OrdersService] closeLatestAssignmentHistory`, { params });
     const query = new Parse.Query(this.assignmentHistoryClassName);
     query.equalTo(OrderAssignmentHistoryTable.Fields.OrderId, params.orderId);
     query.equalTo(OrderAssignmentHistoryTable.Fields.ExecutorId, params.executorId);
@@ -1935,6 +1992,7 @@ export class OrdersService {
     reason?: string;
     comment?: string;
   }): Promise<void> {
+    this.logger.log(`[OrdersService] recordStatusHistory`, { params });
     try {
       const rec = new Parse.Object(this.statusHistoryClassName);
       rec.set(OrderStatusHistoryTable.Fields.OrderId, params.orderId);
@@ -1958,6 +2016,7 @@ export class OrdersService {
     previousStatus: OrderStatus,
     cancellationRequestId: string | null,
   ) {
+    this.logger.log(`[OrdersService] applyCancellation`, { orderId: order.id, canceledBy, reason, comment, previousStatus, cancellationRequestId });
     order.set(OrderTable.Fields.Status, OrderStatus.Canceled);
     order.set(OrderTable.Fields.PreviousStatus, previousStatus);
     order.set(OrderTable.Fields.CanceledAt, new Date());
@@ -1997,6 +2056,7 @@ export class OrdersService {
    * впливає на вже створене замовлення.
    */
   async snapshotServiceChecklist(orderId: string, serviceId: string): Promise<void> {
+    this.logger.log(`[OrdersService] snapshotServiceChecklist`, { orderId, serviceId });
     try {
       // Отримуємо чек-лист послуги
       const query = new this.back4app.parse.Query(this.serviceChecklistClassName);
@@ -2044,6 +2104,7 @@ export class OrdersService {
     clientTelegramId: string,
     response: 'yes' | 'clarification' | 'add_service',
   ): Promise<void> {
+    this.logger.log(`[OrdersService] confirmClientConfirmation`, { orderId, clientTelegramId, response });
     const order = await this.getOrderObject(orderId);
     const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
     const ownerTg = order.get(OrderTable.Fields.TelegramId) as string;
@@ -2086,6 +2147,7 @@ export class OrdersService {
     clientTelegramId: string,
     serviceName: string,
   ): Promise<void> {
+    this.logger.log(`[OrdersService] addAdditionalService`, { orderId, clientTelegramId, serviceName });
     const order = await this.getOrderObject(orderId);
     const ownerTg = order.get(OrderTable.Fields.TelegramId) as string;
     if (ownerTg !== clientTelegramId) {
@@ -2104,6 +2166,7 @@ export class OrdersService {
    * Сповіщає клієнта про завантажені фото «до» та просить підтвердити поховання.
    */
   private async notifyClientBeforePhotos(orderId: string, order: Parse.Object): Promise<void> {
+    this.logger.log(`[OrdersService] notifyClientBeforePhotos`, { orderId });
     const clientTelegramId = order.get(OrderTable.Fields.TelegramId) as string | null;
     if (!clientTelegramId) return;
 
@@ -2182,6 +2245,7 @@ export class OrdersService {
   }
 
   private mapOrderFields(order: Parse.Object) {
+    this.logger.log(`[OrdersService] mapOrderFields`, { orderId: order.id });
     const service = order.get(OrderTable.Fields.Service) as
       | Parse.Object
       | undefined;
@@ -2260,6 +2324,11 @@ export class OrdersService {
       clientConfirmedAt: order.get(OrderTable.Fields.ClientConfirmedAt) as Date | null,
       clientConfirmedBy: order.get(OrderTable.Fields.ClientConfirmedBy) as string | null,
       clientConfirmationResponse: order.get(OrderTable.Fields.ClientConfirmationResponse) as
+        | string
+        | null,
+      beforePhotosConfirmedAt: order.get(OrderTable.Fields.BeforePhotosConfirmedAt) as Date | null,
+      beforePhotosConfirmedBy: order.get(OrderTable.Fields.BeforePhotosConfirmedBy) as string | null,
+      beforePhotosConfirmationResponse: order.get(OrderTable.Fields.BeforePhotosConfirmationResponse) as
         | string
         | null,
       checklistAnswers: order.get(OrderTable.Fields.ChecklistAnswers) as

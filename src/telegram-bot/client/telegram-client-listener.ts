@@ -1,4 +1,5 @@
 import {Action, Command, Ctx, Hears, On, Start, Update} from 'nestjs-telegraf';
+import { Logger } from '@nestjs/common';
 import {OrdersService} from '../../orders/orders.service';
 import {ServicesService} from '../../services/services.service';
 import {Context, Markup} from 'telegraf';
@@ -17,6 +18,7 @@ import {Message} from "telegraf/types";
 
 @Update()
 export class TelegramClientListener {
+  private readonly logger = new Logger(TelegramClientListener.name);
   constructor(
     private readonly ordersService: OrdersService,
     private readonly servicesService: ServicesService,
@@ -29,7 +31,7 @@ export class TelegramClientListener {
    */
   @Start()
   async onStart(@Ctx() ctx: Context) {
-    console.log('[TelegramClientListener] onStart: Команда /start | UserId:', ctx.from?.id, '| Username:', ctx.from?.username);
+    this.logger.log(`[TelegramClientListener] onStart`, { userId: ctx.from?.id, username: ctx.from?.username });
     // Головне меню
     await ctx.reply(
       OrderStepUa.Welcome,
@@ -44,7 +46,7 @@ export class TelegramClientListener {
   @Command('create_order')
   async onCreateOrder(@Ctx() ctx: OrderWizardContext) {
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[TelegramClientListener] onCreateOrder: Створення замовлення | UserId:', ctx.from?.id, '| Text:', messageText);
+    this.logger.log(`[TelegramClientListener] onCreateOrder`, { userId: ctx.from?.id, text: messageText });
     ctx.session.orderForm = {};
 
     // 🔥 ГОЛОВНИЙ ФІКС: Надсилаємо невидиме повідомлення про вхід, яке згортає меню
@@ -61,7 +63,7 @@ export class TelegramClientListener {
   @Command('services')
   async onServicesCommand(@Ctx() ctx: Context) {
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[TelegramClientListener] onServicesCommand: Перегляд послуг | UserId:', ctx.from?.id, '| Text:', messageText);
+    this.logger.log(`[TelegramClientListener] onServicesCommand`, { userId: ctx.from?.id, text: messageText });
     const loadingMsg = await ctx.reply(OrderStepUa.LoadingServices).catch(() => null);
     const chatId = ctx.chat?.id ?? 0;
 
@@ -127,7 +129,7 @@ export class TelegramClientListener {
   @Hears(MainMenu.MyBurialsMemorials)
   @Command('my_memorials')
   async onMyMemorials(@Ctx() ctx: Context) {
-    console.log('[TelegramClientListener] onMyMemorials: Перегляд власних місць пам\'яті | UserId:', ctx.from?.id);
+    this.logger.log(`[TelegramClientListener] onMyMemorials`, { userId: ctx.from?.id });
     const telegramId = ctx.from?.id.toString();
     if (!telegramId) return;
 
@@ -230,7 +232,7 @@ export class TelegramClientListener {
   @Hears(MainMenu.MyOrders)
   @Command('my_orders')
   async onMyOrders(@Ctx() ctx: Context) {
-    console.log('[TelegramClientListener] onMyOrders: Перегляд власних замовлень | UserId:', ctx.from?.id);
+    this.logger.log(`[TelegramClientListener] onMyOrders`, { userId: ctx.from?.id });
     const telegramId = ctx.from?.id.toString();
     if (!telegramId) return;
 
@@ -292,7 +294,7 @@ export class TelegramClientListener {
   @Hears(MainMenu.Help)
   @Command('help')
   async onHelp(@Ctx() ctx: Context) {
-    console.log('[TelegramClientListener] onHelp: Допомога | UserId:', ctx.from?.id);
+    this.logger.log(`[TelegramClientListener] onHelp`, { userId: ctx.from?.id });
     await ctx.reply(OrderStepUa.HintAdminFeedbackHelp, {parse_mode: 'HTML'});
   }
 
@@ -302,7 +304,7 @@ export class TelegramClientListener {
   @Action(/^client_order_service_(.+)$/)
   async onClientOrderServiceClick(@Ctx() ctx: OrderWizardContext) {
     const match = (ctx as any).match;
-    console.log('[TelegramClientListener] onClientOrderServiceClick: Вибір послуги з каталогу | UserId:', ctx.from?.id, '| ServiceId:', match?.[1]);
+    this.logger.log(`[TelegramClientListener] onClientOrderServiceClick`, { userId: ctx.from?.id, serviceId: match?.[1] });
     // 1. Обов'язково знімаємо "годинничок" (анімацію завантаження) з інлайн-кнопки
     await ctx.telegram.answerCbQuery(ctx.callbackQuery?.id ?? '').catch(() => null);
 
@@ -335,7 +337,7 @@ export class TelegramClientListener {
    */
   @Action('client_back_to_menu')
   async onBackToMenuClick(@Ctx() ctx: Context) {
-    console.log('[TelegramClientListener] onBackToMenuClick: Повернення до головного меню | UserId:', ctx.from?.id);
+    this.logger.log(`[TelegramClientListener] onBackToMenuClick`, { userId: ctx.from?.id });
     const id = ctx.callbackQuery?.id ?? ''
     await ctx.telegram.answerCbQuery(id);
 
@@ -346,7 +348,7 @@ export class TelegramClientListener {
 
   @Action(/^client_service_desc_(.+)$/)
   async onServiceDescription(@Ctx() ctx: Context & { match: RegExpExecArray }) {
-    console.log('[TelegramClientListener] onServiceDescription: Перегляд опису послуги | UserId:', ctx.from?.id, '| ServiceId:', ctx.match?.[1]);
+    this.logger.log(`[TelegramClientListener] onServiceDescription`, { userId: ctx.from?.id, serviceId: ctx.match?.[1] });
     const callbackQuery = ctx.callbackQuery;
     if (!callbackQuery) return;
 
@@ -398,7 +400,7 @@ export class TelegramClientListener {
 
   @Action('client_refresh_services_list')
   async onRefreshServicesList(@Ctx() ctx: Context) {
-    console.log('[TelegramClientListener] onRefreshServicesList: Оновлення списку послуг | UserId:', ctx.from?.id);
+    this.logger.log(`[TelegramClientListener] onRefreshServicesList`, { userId: ctx.from?.id });
     try {
       // 1. Гасимо годинничок Telegram на кнопці
       await ctx.answerCbQuery().catch(() => null);
@@ -419,7 +421,7 @@ export class TelegramClientListener {
   @Action(/^memorial_order_service_(.+)$/)
   async onMemorialOrderService(@Ctx() ctx: OrderWizardContext) {
     const match = (ctx as any).match;
-    console.log('[TelegramClientListener] onMemorialOrderService: Швидке замовлення послуги для місця | UserId:', ctx.from?.id, '| BurialId:', match?.[1]);
+    this.logger.log(`[TelegramClientListener] onMemorialOrderService`, { userId: ctx.from?.id, burialId: match?.[1] });
     await ctx.telegram.answerCbQuery(ctx.callbackQuery?.id ?? '').catch(() => null);
     // @ts-ignore
     const burialId = ctx.match[1];
@@ -455,7 +457,7 @@ export class TelegramClientListener {
   @Action(/^memorial_edit_(.+)$/)
   async onMemorialEdit(@Ctx() ctx: OrderWizardContext) {
     const match = (ctx as any).match;
-    console.log('[TelegramClientListener] onMemorialEdit: Редагування місця пам\'яті | UserId:', ctx.from?.id, '| BurialId:', match?.[1]);
+    this.logger.log(`[TelegramClientListener] onMemorialEdit`, { userId: ctx.from?.id, burialId: match?.[1] });
     await ctx.telegram.answerCbQuery(ctx.callbackQuery?.id ?? '').catch(() => null);
     // @ts-ignore
     const burialId = ctx.match[1];
@@ -476,7 +478,7 @@ export class TelegramClientListener {
    */
   @Action('client_memorial_add')
   async onMemorialAdd(@Ctx() ctx: OrderWizardContext) {
-    console.log('[TelegramClientListener] onMemorialAdd: Додавання нового місця пам\'яті | UserId:', ctx.from?.id);
+    this.logger.log(`[TelegramClientListener] onMemorialAdd`, { userId: ctx.from?.id });
     await ctx.telegram.answerCbQuery(ctx.callbackQuery?.id ?? '').catch(() => null);
     await ctx.reply('⏳ Перехід до створення картки об\'єкта...', Markup.removeKeyboard());
     if (!ctx.session.orderForm) {
@@ -493,7 +495,7 @@ export class TelegramClientListener {
   @On('text')
   async onTextMessage(@Ctx() ctx: Context) {
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[TelegramClientListener] onTextMessage: Отримано текстове повідомлення | UserId:', ctx.from?.id, '| Text:', messageText);
+    this.logger.log(`[TelegramClientListener] onTextMessage`, { userId: ctx.from?.id, text: messageText });
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore (Безпечний ігнор динамічного тексту повідомлення для Telegraf)
     const text = ctx.message?.text as string;
@@ -511,7 +513,7 @@ export class TelegramClientListener {
     chatId: number,
     loadingMsg: Message.TextMessage | null
   ) {
-    console.log('[TelegramClientListener] prepareServicesButtons: Формування кнопок послуг | Count:', services.length);
+    this.logger.log(`[TelegramClientListener] prepareServicesButtons`, { count: services.length });
 
     // 1. Формуємо гарне текстове меню з детальним описом
     let responseText = OrderStepUa.ServicesCatalog;
@@ -552,7 +554,7 @@ export class TelegramClientListener {
 
   @Action(/^client_confirm_yes_(.+)$/)
   async onClientConfirmYes(@Ctx() ctx: any) {
-    console.log('[TelegramClientListener] onClientConfirmYes: Підтвердження знаходження поховання | UserId:', ctx.from?.id, '| OrderId:', ctx.match?.[1]);
+    this.logger.log(`[TelegramClientListener] onClientConfirmYes`, { userId: ctx.from?.id, orderId: ctx.match?.[1] });
     await ctx.answerCbQuery?.();
     const orderId = ctx.match?.[1] ?? '';
     const telegramId = ctx.from?.id?.toString() ?? '';
@@ -571,7 +573,7 @@ export class TelegramClientListener {
 
   @Action(/^client_confirm_clarify_(.+)$/)
   async onClientConfirmClarify(@Ctx() ctx: any) {
-    console.log('[TelegramClientListener] onClientConfirmClarify: Запит на уточнення | UserId:', ctx.from?.id, '| OrderId:', ctx.match?.[1]);
+    this.logger.log(`[TelegramClientListener] onClientConfirmClarify`, { userId: ctx.from?.id, orderId: ctx.match?.[1] });
     await ctx.answerCbQuery?.();
     const orderId = ctx.match?.[1] ?? '';
     const telegramId = ctx.from?.id?.toString() ?? '';
@@ -590,7 +592,7 @@ export class TelegramClientListener {
 
   @Action(/^client_confirm_addservice_(.+)$/)
   async onClientConfirmAddService(@Ctx() ctx: any) {
-    console.log('[TelegramClientListener] onClientConfirmAddService: Додавання додаткової послуги | UserId:', ctx.from?.id, '| OrderId:', ctx.match?.[1]);
+    this.logger.log(`[TelegramClientListener] onClientConfirmAddService`, { userId: ctx.from?.id, orderId: ctx.match?.[1] });
     await ctx.answerCbQuery?.();
     const orderId = ctx.match?.[1] ?? '';
     const telegramId = ctx.from?.id?.toString() ?? '';
@@ -608,7 +610,7 @@ export class TelegramClientListener {
 
   @On('text')
   async onAdditionalServiceText(@Ctx() ctx: any) {
-    console.log('[TelegramClientListener] onAdditionalServiceText: Введення назви додаткової послуги | UserId:', ctx.from?.id, '| Text:', ctx.message?.text);
+    this.logger.log(`[TelegramClientListener] onAdditionalServiceText`, { userId: ctx.from?.id, text: ctx.message?.text });
     const pending = ctx.session?.addingAdditionalService;
     if (!pending?.orderId || !pending?.telegramId) return;
 

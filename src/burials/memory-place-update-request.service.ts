@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   BadRequestException,
   ForbiddenException,
@@ -103,6 +104,7 @@ export interface MemoryPlaceUpdateRequestView {
 
 @Injectable()
 export class MemoryPlaceUpdateRequestService {
+  private readonly logger = new Logger(MemoryPlaceUpdateRequestService.name);
   private readonly memoryPlaceClass = MemoryPlaceTable.TableName;
   private readonly requestClass = MemoryPlaceUpdateRequestTable.TableName;
   private readonly versionClass = MemoryPlaceVersionTable.TableName;
@@ -117,6 +119,7 @@ export class MemoryPlaceUpdateRequestService {
     dto: ProposeMemoryPlaceUpdateDto,
     executorId: string,
   ): Promise<MemoryPlaceUpdateRequestView> {
+    this.logger.log(`[MemoryPlaceUpdateRequestService] proposeUpdate`, { dto, executorId });
     // Перевіряємо, що Memory Place існує і знімаємо поточний знімок даних
     const currentData = await this.getMemoryPlaceSnapshot(dto.memoryPlaceId);
 
@@ -151,6 +154,7 @@ export class MemoryPlaceUpdateRequestService {
     dto: ReviewMemoryPlaceUpdateDto,
     adminId: string,
   ): Promise<MemoryPlaceUpdateRequestView> {
+    this.logger.log(`[MemoryPlaceUpdateRequestService] adminReview`, { requestId, dto, adminId });
     const request = await this.getRequestById(requestId);
 
     if (request.get(MemoryPlaceUpdateRequestTable.Fields.Status) !== MemoryPlaceUpdateStatus.AwaitingAdminApproval) {
@@ -197,6 +201,7 @@ export class MemoryPlaceUpdateRequestService {
     dto: ReviewMemoryPlaceUpdateDto,
     clientId: string,
   ): Promise<MemoryPlaceUpdateRequestView> {
+    this.logger.log(`[MemoryPlaceUpdateRequestService] clientReview`, { requestId, dto, clientId });
     const request = await this.getRequestById(requestId);
 
     if (request.get(MemoryPlaceUpdateRequestTable.Fields.Status) !== MemoryPlaceUpdateStatus.AwaitingClientApproval) {
@@ -245,6 +250,7 @@ export class MemoryPlaceUpdateRequestService {
     request: Parse.Object,
     memoryPlaceId: string,
   ): Promise<void> {
+    this.logger.log(`[MemoryPlaceUpdateRequestService] applyApprovedUpdate`, { memoryPlaceId });
     const proposedData = request.get(
       MemoryPlaceUpdateRequestTable.Fields.ProposedData,
     ) as MemoryPlaceDataSnapshot;
@@ -296,6 +302,7 @@ export class MemoryPlaceUpdateRequestService {
    * 5. Diff для адміністратора (поле / поточне / пропоноване)
    * ======================================================================== */
   async getDiff(requestId: string): Promise<MemoryPlaceDiffRow[]> {
+    this.logger.log(`[MemoryPlaceUpdateRequestService] getDiff`, { requestId });
     const request = await this.getRequestById(requestId);
 
     const currentData = request.get(
@@ -331,6 +338,7 @@ export class MemoryPlaceUpdateRequestService {
    * 6. Отримання запиту за ID
    * ======================================================================== */
   async getRequestById(requestId: string): Promise<Parse.Object> {
+    this.logger.log(`[MemoryPlaceUpdateRequestService] getRequestById`, { requestId });
     try {
       const query = new this.back4app.parse.Query(this.requestClass);
       const result = await query.get(requestId);
@@ -341,6 +349,7 @@ export class MemoryPlaceUpdateRequestService {
   }
 
   async getRequestViewById(requestId: string): Promise<MemoryPlaceUpdateRequestView> {
+    this.logger.log(`[MemoryPlaceUpdateRequestService] getRequestViewById`, { requestId });
     const request = await this.getRequestById(requestId);
     return this.mapRequestView(request);
   }
@@ -353,6 +362,7 @@ export class MemoryPlaceUpdateRequestService {
     status?: MemoryPlaceUpdateStatus;
     proposedBy?: string;
   }): Promise<MemoryPlaceUpdateRequestView[]> {
+    this.logger.log(`[MemoryPlaceUpdateRequestService] listRequests`, { filters });
     const query = new this.back4app.parse.Query(this.requestClass);
     query.descending('createdAt');
 
@@ -374,6 +384,7 @@ export class MemoryPlaceUpdateRequestService {
    * 8. Версії Memory Place (історія змін)
    * ======================================================================== */
   async listVersions(memoryPlaceId: string): Promise<any[]> {
+    this.logger.log(`[MemoryPlaceUpdateRequestService] listVersions`, { memoryPlaceId });
     const query = new this.back4app.parse.Query(this.versionClass);
     query.equalTo(MemoryPlaceVersionTable.Fields.MemoryPlaceId, memoryPlaceId);
     query.descending('changedAt');
@@ -396,11 +407,13 @@ export class MemoryPlaceUpdateRequestService {
    * ======================================================================== */
 
   private async getMemoryPlaceSnapshot(memoryPlaceId: string): Promise<MemoryPlaceDataSnapshot> {
+    this.logger.log(`[MemoryPlaceUpdateRequestService] getMemoryPlaceSnapshot`, { memoryPlaceId });
     const obj = await this.getMemoryPlaceObject(memoryPlaceId);
     return this.mapMemoryPlaceToSnapshot(obj);
   }
 
   private async getMemoryPlaceObject(memoryPlaceId: string): Promise<Parse.Object> {
+    this.logger.log(`[MemoryPlaceUpdateRequestService] getMemoryPlaceObject`, { memoryPlaceId });
     try {
       const query = new this.back4app.parse.Query(this.memoryPlaceClass);
       return await query.get(memoryPlaceId);
@@ -410,6 +423,7 @@ export class MemoryPlaceUpdateRequestService {
   }
 
   private mapMemoryPlaceToSnapshot(obj: Parse.Object): MemoryPlaceDataSnapshot {
+    this.logger.log(`[MemoryPlaceUpdateRequestService] mapMemoryPlaceToSnapshot`, { id: obj.id });
     const photos = obj.get(MemoryPlaceTable.Fields.Photos);
     const photoUrls: string[] = Array.isArray(photos)
       ? photos.map((p: any) => (p && typeof p.url === 'function' ? p.url() : String(p)))
@@ -432,6 +446,7 @@ export class MemoryPlaceUpdateRequestService {
   }
 
   private extractProposedData(dto: ProposeMemoryPlaceUpdateDto): MemoryPlaceDataSnapshot {
+    this.logger.log(`[MemoryPlaceUpdateRequestService] extractProposedData`, { dto });
     const data: MemoryPlaceDataSnapshot = {};
     for (const field of MEMORY_PLACE_UPDATEABLE_FIELDS) {
       const value = (dto as any)[field];
@@ -443,6 +458,7 @@ export class MemoryPlaceUpdateRequestService {
   }
 
   private mapRequestView(obj: Parse.Object): MemoryPlaceUpdateRequestView {
+    this.logger.log(`[MemoryPlaceUpdateRequestService] mapRequestView`, { id: obj.id });
     return {
       id: obj.id,
       memoryPlaceId: obj.get(MemoryPlaceUpdateRequestTable.Fields.MemoryPlaceId) as string,

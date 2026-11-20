@@ -1,4 +1,5 @@
 import { Ctx, Wizard, WizardStep } from 'nestjs-telegraf';
+import { Logger } from '@nestjs/common';
 import { OrdersService } from '../../../orders/orders.service';
 import { Scene as SceneConst } from '../../telegram-constants';
 import { ExecutorConst } from '../model/executor-const';
@@ -6,11 +7,12 @@ import type { ExecutorWizardContext } from '../interfaces/executor-wizard-contex
 
 @Wizard(SceneConst.ACCEPT_ORDER_SCENE)
 export class AcceptOrderScene {
+  private readonly logger = new Logger(AcceptOrderScene.name);
   constructor(private readonly ordersService: OrdersService) {}
 
   @WizardStep(1)
   async stepAccept(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[AcceptOrderScene] stepAccept: Прийняття замовлення | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId ?? ctx.wizard?.state?.orderId);
+    this.logger.log(`[AcceptOrderScene] stepAccept`, { userId: ctx.from?.id, orderId: ctx.session?.orderId ?? ctx.wizard?.state?.orderId });
     const orderId = ctx.session?.orderId ?? ctx.wizard?.state?.orderId;
     if (!orderId) {
       await ctx.reply(ExecutorConst.OrderNotFound);

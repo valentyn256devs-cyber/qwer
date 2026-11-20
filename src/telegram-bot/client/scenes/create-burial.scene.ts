@@ -1,4 +1,5 @@
 import {Ctx, Wizard, WizardStep} from 'nestjs-telegraf';
+import { Logger } from '@nestjs/common';
 import {Markup} from 'telegraf';
 import {BurialsService} from '../../../burials/burials.service';
 import {type OrderWizardContext, OrderWizardSession} from "../interfaces/order-wizard-context.interface";
@@ -31,12 +32,13 @@ enum CreateBurialStep {
 
 @Wizard(Scene.CREATE_BURIAL_WIZARD)
 export class CreateBurialScene {
+  private readonly logger = new Logger(CreateBurialScene.name);
   constructor(private readonly burialsService: BurialsService) {
   }
 
   @WizardStep(CreateBurialStep.Start)
   async step1(@Ctx() ctx: OrderWizardContext) {
-    console.log('[CreateBurialScene] step1: Вхід у сцену створення поховання (Крок 1) | Форма:', ctx.session?.orderForm);
+    this.logger.log(`[CreateBurialScene] step1`, { form: ctx.session?.orderForm });
     if (!ctx.session.orderForm) {
       ctx.session.orderForm = {};
     }
@@ -63,7 +65,7 @@ export class CreateBurialScene {
   @WizardStep(CreateBurialStep.ActionChoose)
   async stepHandleActionChoice(@Ctx() ctx: OrderWizardContext) {
     const logCallbackData = ctx.has('callback_query') && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
-    console.log('[CreateBurialScene] stepHandleActionChoice: Обробка вибору дії | CallbackData:', logCallbackData);
+    this.logger.log(`[CreateBurialScene] stepHandleActionChoice`, { callbackData: logCallbackData });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) {
       await ctx.reply('Будь ласка, оберіть один з варіантів на кнопках 👆');
       return;
@@ -124,7 +126,7 @@ export class CreateBurialScene {
   @WizardStep(CreateBurialStep.ConfirmExistingBurial)
   async stepConfirmExistingBurial(@Ctx() ctx: OrderWizardContext) {
     const logCallbackData = ctx.has('callback_query') && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
-    console.log('[CreateBurialScene] stepConfirmExistingBurial: Підтвердження вибору існуючого поховання | CallbackData:', logCallbackData);
+    this.logger.log(`[CreateBurialScene] stepConfirmExistingBurial`, { callbackData: logCallbackData });
     if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) {
       await ctx.reply('Будь ласка, оберіть місце зі списку вище 👆');
       return;
@@ -195,7 +197,7 @@ export class CreateBurialScene {
    * КРОК 1: Довільна назва для розпізнавання
    */
   async onCreateBurial(ctx: OrderWizardContext) {
-    console.log('[CreateBurialScene] onCreateBurial: Початок створення нового поховання | Форма:', ctx.session?.orderForm);
+    this.logger.log(`[CreateBurialScene] onCreateBurial`, { form: ctx.session?.orderForm });
     await ctx.reply(Step.Step2, {parse_mode: 'HTML'});
 
     await ctx.reply(
@@ -217,7 +219,7 @@ export class CreateBurialScene {
   @WizardStep(CreateBurialStep.CreateBurial)
   async stepCreateBurial(@Ctx() ctx: OrderWizardContext) {
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[CreateBurialScene] stepCreateBurial: Введення назви поховання | Текст:', messageText);
+    this.logger.log(`[CreateBurialScene] stepCreateBurial`, { text: messageText });
     if (await this.handleBackAction(ctx, 0, ctx.scene.leave)) {
       delete ctx.session.orderForm;
       await showMainMenu(ctx);
@@ -244,7 +246,7 @@ export class CreateBurialScene {
   @WizardStep(CreateBurialStep.EnterLastName)
   async stepLastName(@Ctx() ctx: OrderWizardContext) {
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[CreateBurialScene] stepLastName: Введення прізвища померлого | Текст:', messageText);
+    this.logger.log(`[CreateBurialScene] stepLastName`, { text: messageText });
     if (await this.handleBackAction(ctx, CreateBurialStep.Start - 1, this.step1)) { // переходимо на ввод даних місця поховання
       return;
     }
@@ -271,7 +273,7 @@ export class CreateBurialScene {
   @WizardStep(CreateBurialStep.EnterName)
   async stepName(@Ctx() ctx: OrderWizardContext) {
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[CreateBurialScene] stepName: Введення імені померлого | Текст:', messageText);
+    this.logger.log(`[CreateBurialScene] stepName`, { text: messageText });
     if (await this.handleBackAction(
       ctx,
       CreateBurialStep.EnterLastName - 1,
@@ -313,7 +315,7 @@ export class CreateBurialScene {
   async stepFatherName(@Ctx() ctx: OrderWizardContext) {
     const callbackData = ctx.has('callback_query') && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[CreateBurialScene] stepFatherName: Введення по батькові померлого | CallbackData:', callbackData, '| Текст:', messageText);
+    this.logger.log(`[CreateBurialScene] stepFatherName`, { callbackData, text: messageText });
     if (await this.handleBackAction(
       ctx,
       CreateBurialStep.EnterName - 1,
@@ -382,7 +384,7 @@ export class CreateBurialScene {
   async stepBirthDay(@Ctx() ctx: OrderWizardContext) {
     const callbackData = ctx.has('callback_query') && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[CreateBurialScene] stepBirthDay: Введення дати народження | CallbackData:', callbackData, '| Текст:', messageText);
+    this.logger.log(`[CreateBurialScene] stepBirthDay`, { callbackData, text: messageText });
     if (await this.handleBackAction(
       ctx,
       CreateBurialStep.EnterFatherName - 1,
@@ -455,7 +457,7 @@ export class CreateBurialScene {
   async stepDiedDate(@Ctx() ctx: OrderWizardContext) {
     const callbackData = ctx.has('callback_query') && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[CreateBurialScene] stepDiedDate: Введення дати смерті | CallbackData:', callbackData, '| Текст:', messageText);
+    this.logger.log(`[CreateBurialScene] stepDiedDate`, { callbackData, text: messageText });
     if (await this.handleBackAction(
       ctx,
       CreateBurialStep.EnterBirthDay - 1,
@@ -523,7 +525,7 @@ export class CreateBurialScene {
   @WizardStep(CreateBurialStep.ActionChooseLocation)
   async stepGeoLocation(@Ctx() ctx: OrderWizardContext) {
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[CreateBurialScene] stepGeoLocation: Вибір типу локації | Текст:', messageText);
+    this.logger.log(`[CreateBurialScene] stepGeoLocation`, { text: messageText });
     if (await this.handleBackAction(ctx, CreateBurialStep.EnterDiedDay - 1, this.stepDiedDate)) {
       return;
     }
@@ -595,7 +597,7 @@ export class CreateBurialScene {
   async stepCoordinates(@Ctx() ctx: OrderWizardContext) {
     const messageLocation = ctx.message && 'location' in ctx.message ? ctx.message.location : undefined;
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[CreateBurialScene] stepCoordinates: Введення координат/локації | LocationType:', ctx.session?.orderForm?.locationType, '| Location:', messageLocation, '| Текст:', messageText);
+    this.logger.log(`[CreateBurialScene] stepCoordinates`, { locationType: ctx.session?.orderForm?.locationType, location: messageLocation, text: messageText });
     if (await this.handleBackAction(ctx, CreateBurialStep.EnterDiedDay - 1, this.stepDiedDate)) {
       return;
     }
@@ -658,7 +660,7 @@ export class CreateBurialScene {
   async stepBurialDescription(@Ctx() ctx: OrderWizardContext) {
     const callbackData = ctx.has('callback_query') && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[CreateBurialScene] stepBurialDescription: Введення орієнтирів/опис місця | CallbackData:', callbackData, '| Текст:', messageText);
+    this.logger.log(`[CreateBurialScene] stepBurialDescription`, { callbackData, text: messageText });
     if (await this.handleBackAction(
       ctx,
       CreateBurialStep.ActionChooseLocation - 1,
@@ -728,7 +730,7 @@ export class CreateBurialScene {
   async stepAdditionalInfo(@Ctx() ctx: OrderWizardContext) {
     const callbackData = ctx.has('callback_query') && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[CreateBurialScene] stepAdditionalInfo: Введення додаткової інформації/коментаря | CallbackData:', callbackData, '| Текст:', messageText);
+    this.logger.log(`[CreateBurialScene] stepAdditionalInfo`, { callbackData, text: messageText });
     if (await this.handleBackAction(
       ctx,
       CreateBurialStep.EnterLocation - 1,
@@ -783,7 +785,7 @@ export class CreateBurialScene {
    */
   @WizardStep(CreateBurialStep.Saving)
   async saving(@Ctx() ctx: OrderWizardContext) {
-    console.log('[CreateBurialScene] saving: Збереження поховання в базу даних | Temp:', ctx.wizard.state.burialTemp, '| Форма:', ctx.session?.orderForm);
+    this.logger.log(`[CreateBurialScene] saving`, { temp: ctx.wizard.state.burialTemp, form: ctx.session?.orderForm });
     if (!ctx.wizard.state.burialTemp) {
       ctx.wizard.state.burialTemp = {};
     }
@@ -861,7 +863,7 @@ export class CreateBurialScene {
   ): Promise<Boolean> {
     const logCallbackData = ctx.has('callback_query') && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[CreateBurialScene] handleBackAction: Обробка кнопки "Назад" | StepIndex:', stepIndex, '| CallbackData:', logCallbackData, '| Текст:', messageText);
+    this.logger.log(`[CreateBurialScene] handleBackAction`, { stepIndex, callbackData: logCallbackData, text: messageText });
     // 🌟 ПЕРЕВІРКА А: Натиснули інлайн-кнопку
     const isInlineBack = ctx.has('callback_query') && 'data' in ctx.callbackQuery && ctx.callbackQuery.data === 'back_to_previous_step';
     // 🌟 ПЕРЕВІРКА Б: Натиснули нижню текстову кнопку

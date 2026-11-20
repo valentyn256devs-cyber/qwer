@@ -1,4 +1,4 @@
-import {Injectable, NotFoundException} from '@nestjs/common';
+import {Injectable, Logger, NotFoundException} from '@nestjs/common';
 import {Back4appService} from '../back4app/back4app.service';
 import * as Parse from 'parse/node';
 import {BurialTable} from './models/burial-table';
@@ -6,6 +6,7 @@ import {CreateBurialDto} from './dto/create-burial.dto';
 
 @Injectable()
 export class BurialsService {
+  private readonly logger = new Logger(BurialsService.name);
   private readonly className = BurialTable.TableName;
 
   constructor(private readonly back4app: Back4appService) {
@@ -15,6 +16,7 @@ export class BurialsService {
    * Створення нового поховання (працює і для API, і для бота)
    */
   async create(dto: CreateBurialDto) {
+    this.logger.log(`[BurialsService] create`, { dto });
     const burial = new Parse.Object(this.className);
 
     burial.set(BurialTable.Fields.Name, dto.name);
@@ -50,6 +52,7 @@ export class BurialsService {
    * Отримання всіх поховань конкретного користувача Telegram
    */
   async findByTelegramId(telegramId: string, includeDeleted = false) {
+    this.logger.log(`[BurialsService] findByTelegramId`, { telegramId, includeDeleted });
     const query = new this.back4app.parse.Query(this.className);
     query.equalTo(BurialTable.Fields.TelegramId, telegramId);
     query.descending('createdAt');
@@ -67,6 +70,7 @@ export class BurialsService {
    * Отримання одного поховання за objectId
    */
   async findOne(id: string) {
+    this.logger.log(`[BurialsService] findOne`, { id });
     try {
       const query = new this.back4app.parse.Query(this.className);
       const result = await query.get(id);
@@ -77,6 +81,7 @@ export class BurialsService {
   }
 
   async findBurialById(id: string | undefined) {
+    this.logger.log(`[BurialsService] findBurialById`, { id });
     try {
       if (!id) {
         return undefined;
@@ -89,6 +94,7 @@ export class BurialsService {
   }
 
   async updateBurial(id: string, data: Partial<any>): Promise<any> {
+    this.logger.log(`[BurialsService] updateBurial`, { id, data });
     const query = new Parse.Query(this.className);
     const obj = await query.get(id);
 
@@ -115,6 +121,7 @@ export class BurialsService {
    * Мапінг з Parse.Object у стандартний об'єкт
    */
   private mapFields(obj: Parse.Object) {
+    this.logger.log(`[BurialsService] mapFields`, { id: obj.id });
     const photosArray = obj.get(BurialTable.Fields.Photos) as Parse.File[] | undefined;
     const urls = photosArray ? photosArray.map(file => file.url()) : [];
 

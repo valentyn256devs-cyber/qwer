@@ -1,11 +1,13 @@
 import {Context as Ctx, Wizard, WizardStep} from 'nestjs-telegraf';
 import {Markup} from 'telegraf';
+import {Logger} from '@nestjs/common';
 import {BurialsService} from '../../../burials/burials.service';
 import {type OrderWizardContext} from '../interfaces/order-wizard-context.interface';
 import {editBurialMenuButtons, fetchEditHint, OrderStepUa, Scene, showMainMenu} from '../../telegram-constants';
 
 @Wizard(Scene.EDIT_BURIAL_WIZARD)
 export class EditBurialScene {
+  private readonly logger = new Logger(EditBurialScene.name);
   constructor(private readonly burialsService: BurialsService) {
   }
 
@@ -14,7 +16,7 @@ export class EditBurialScene {
    */
   @WizardStep(1)
   async stepInitEdit(@Ctx() ctx: OrderWizardContext) {
-    console.log('[EditBurialScene] stepInitEdit: Ініціалізація редагування поховання | BurialId:', ctx.session?.orderForm?.burialId);
+    this.logger.log(`[EditBurialScene] stepInitEdit`, { burialId: ctx.session?.orderForm?.burialId });
     const burialId = ctx.session.orderForm?.burialId;
 
     if (!burialId) {
@@ -83,7 +85,7 @@ export class EditBurialScene {
   @WizardStep(2)
   async stepHandleFieldChoice(@Ctx() ctx: OrderWizardContext) {
     const logCallbackData = ctx.has('callback_query') && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
-    console.log('[EditBurialScene] stepHandleFieldChoice: Вибір поля для редагування | CallbackData:', logCallbackData);
+    this.logger.log(`[EditBurialScene] stepHandleFieldChoice`, { callbackData: logCallbackData });
     const callbackQuery = ctx.callbackQuery;
     if (!callbackQuery || !('data' in callbackQuery)) return;
 
@@ -139,7 +141,7 @@ export class EditBurialScene {
   async stepSaveNewValue(@Ctx() ctx: OrderWizardContext) {
     const logCallbackData = ctx.has('callback_query') && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
     const messageText = ctx.message && 'text' in ctx.message ? ctx.message.text : undefined;
-    console.log('[EditBurialScene] stepSaveNewValue: Збереження нового значення | CallbackData:', logCallbackData, '| Текст:', messageText, '| EditTargetField:', ctx.session?.orderForm?.editTargetField);
+    this.logger.log(`[EditBurialScene] stepSaveNewValue`, { callbackData: logCallbackData, text: messageText, editTargetField: ctx.session?.orderForm?.editTargetField });
     if (ctx.has('callback_query') && 'data' in ctx.callbackQuery) {
       const callbackData = ctx.callbackQuery.data;
       if (callbackData === 'edit_cancel') {
@@ -200,7 +202,7 @@ export class EditBurialScene {
   @WizardStep(4)
   async stepHandleDeleteConfirmation(@Ctx() ctx: OrderWizardContext) {
     const logCallbackData = ctx.has('callback_query') && 'data' in ctx.callbackQuery ? ctx.callbackQuery.data : undefined;
-    console.log('[EditBurialScene] stepHandleDeleteConfirmation: Підтвердження видалення поховання | CallbackData:', logCallbackData, '| BurialId:', ctx.session?.orderForm?.burialId);
+    this.logger.log(`[EditBurialScene] stepHandleDeleteConfirmation`, { callbackData: logCallbackData, burialId: ctx.session?.orderForm?.burialId });
     const callbackQuery = ctx.callbackQuery;
 
     // Якщо користувач замість кліку по кнопці підтвердження надіслав текст

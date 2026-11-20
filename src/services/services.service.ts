@@ -16,6 +16,7 @@ export class ServicesService implements OnApplicationBootstrap {
 
   // Автоматичне заповнення тестовими даними при старті додатка
   async onApplicationBootstrap() {
+    this.logger.log(`[ServicesService] onApplicationBootstrap`);
     try {
       const query = new Parse.Query(this.serviceClassName);
       const count = await query.count();
@@ -41,6 +42,7 @@ export class ServicesService implements OnApplicationBootstrap {
 
   // REST API: Отримати всі послуги
   async findAll() {
+    this.logger.log(`[ServicesService] findAll`);
     try {
       const query = new Parse.Query(this.serviceClassName);
       query.ascending('price');
@@ -55,6 +57,7 @@ export class ServicesService implements OnApplicationBootstrap {
 
   // REST API: Отримати одну послугу за ID
   async findOne(id: string) {
+    this.logger.log(`[ServicesService] findOne`, { id });
     const query = new Parse.Query(this.serviceClassName);
     try {
       const service = await query.get(id);
@@ -69,6 +72,7 @@ export class ServicesService implements OnApplicationBootstrap {
    * Допоміжний метод для строгої типізації та мапінгу Parse.Object
    */
   private mapServiceFields(service: Parse.Object) {
+    this.logger.log(`[ServicesService] mapServiceFields`, { serviceId: service.id });
     return ServiceResponseDto.fromParse(service);
   }
 }

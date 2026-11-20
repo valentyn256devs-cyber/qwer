@@ -1,4 +1,5 @@
 import { Action, Ctx, Wizard, WizardStep } from 'nestjs-telegraf';
+import { Logger } from '@nestjs/common';
 import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
 import { Scene as SceneConst } from '../../telegram-constants';
@@ -7,11 +8,12 @@ import type { ExecutorWizardContext } from '../interfaces/executor-wizard-contex
 
 @Wizard(SceneConst.OPEN_ORDERS_SCENE)
 export class OpenOrdersScene {
+  private readonly logger = new Logger(OpenOrdersScene.name);
   constructor(private readonly ordersService: OrdersService) {}
 
   @WizardStep(1)
   async stepOpenOrders(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[OpenOrdersScene] stepOpenOrders: Відкриті замовлення | UserId:', ctx.from?.id);
+    this.logger.log(`[OpenOrdersScene] stepOpenOrders`, { userId: ctx.from?.id });
     await ctx.reply(ExecutorConst.OpenOrdersLoading);
 
     try {
@@ -53,7 +55,7 @@ export class OpenOrdersScene {
         ]).reply_markup,
       });
     } catch (error) {
-      console.error('Помилка завантаження відкритих замовлень:', error);
+      this.logger.error(`[OpenOrdersScene] stepOpenOrders`, { error: (error as Error).message });
       await ctx.reply(ExecutorConst.OpenOrdersError);
       await ctx.scene.leave();
     }
@@ -62,7 +64,7 @@ export class OpenOrdersScene {
   /** Перегляд замовлення → картка деталей. */
   @Action(/^executor_view_order_(.+)$/)
   async onViewOrder(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[OpenOrdersScene] onViewOrder: Перегляд замовлення | UserId:', ctx.from?.id, '| OrderId:', ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '');
+    this.logger.log(`[OpenOrdersScene] onViewOrder`, { userId: ctx.from?.id, orderId: ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '' });
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await ctx.answerCbQuery?.();
     if (!orderId) return;
@@ -75,7 +77,7 @@ export class OpenOrdersScene {
   /** Взяти замовлення → сцена прийняття. */
   @Action(/^executor_accept_order_(.+)$/)
   async onAcceptOrder(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[OpenOrdersScene] onAcceptOrder: Прийняття замовлення | UserId:', ctx.from?.id, '| OrderId:', ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '');
+    this.logger.log(`[OpenOrdersScene] onAcceptOrder`, { userId: ctx.from?.id, orderId: ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '' });
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await ctx.answerCbQuery?.();
     if (!orderId) return;

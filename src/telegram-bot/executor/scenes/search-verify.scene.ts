@@ -1,4 +1,5 @@
 import { Action, Ctx, Wizard, WizardStep } from 'nestjs-telegraf';
+import { Logger } from '@nestjs/common';
 import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
 import { BurialsService } from '../../../burials/burials.service';
@@ -14,6 +15,7 @@ interface VerificationItem {
 
 @Wizard(SceneConst.SEARCH_VERIFY_SCENE)
 export class SearchVerifyScene {
+  private readonly logger = new Logger(SearchVerifyScene.name);
   constructor(
     private readonly ordersService: OrdersService,
     private readonly burialsService: BurialsService,
@@ -22,7 +24,7 @@ export class SearchVerifyScene {
 
   @WizardStep(1)
   async stepSearchVerify(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[SearchVerifyScene] stepSearchVerify: Пошук та перевірка | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
+    this.logger.log(`[SearchVerifyScene] stepSearchVerify`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
 
@@ -61,7 +63,7 @@ export class SearchVerifyScene {
   /** Step 1: Підтвердження прибуття → перехід до Step 2 (Знайдено). */
   @Action('executor_arrived')
   async onArrived(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[SearchVerifyScene] onArrived: Прибуття підтверджено | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
+    this.logger.log(`[SearchVerifyScene] onArrived`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     await ctx.answerCbQuery?.();
     ctx.wizard.state = ctx.wizard.state || {};
     (ctx.wizard.state as any).searchStep = 2;
@@ -71,7 +73,7 @@ export class SearchVerifyScene {
   /** Step 2: Поховання знайдено → перехід до Step 3 (Перевірка правильності). */
   @Action('executor_found')
   async onFound(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[SearchVerifyScene] onFound: Поховання знайдено | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
+    this.logger.log(`[SearchVerifyScene] onFound`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     await ctx.answerCbQuery?.();
     ctx.wizard.state = ctx.wizard.state || {};
     (ctx.wizard.state as any).searchStep = 3;
@@ -81,7 +83,7 @@ export class SearchVerifyScene {
   /** Step 3: Підтвердження правильності поховання → перехід до фото «до». */
   @Action('executor_verify_correct')
   async onVerifyCorrect(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[SearchVerifyScene] onVerifyCorrect: Правильність підтверджено | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
+    this.logger.log(`[SearchVerifyScene] onVerifyCorrect`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     await ctx.answerCbQuery?.();
     return ctx.scene.enter(SceneConst.BEFORE_PHOTOS_SCENE);
   }
@@ -89,7 +91,7 @@ export class SearchVerifyScene {
   /** Step 3: Інформація потребує оновлення → пропонуємо запропонувати оновлення Memory Place. */
   @Action('executor_verify_update')
   async onVerifyUpdate(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[SearchVerifyScene] onVerifyUpdate: Потрібне оновлення даних | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
+    this.logger.log(`[SearchVerifyScene] onVerifyUpdate`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     await ctx.answerCbQuery?.();
     await ctx.reply(
       `🔄 <b>Інформація потребує оновлення</b>\n\n` +

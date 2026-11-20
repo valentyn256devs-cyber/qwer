@@ -1,4 +1,5 @@
 import { Action, Ctx, Hears, Wizard, WizardStep } from 'nestjs-telegraf';
+import { Logger } from '@nestjs/common';
 import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
 import { BurialsService } from '../../../burials/burials.service';
@@ -32,6 +33,7 @@ const PAGE_SIZE = 5;
  */
 @Wizard(SceneConst.DONE_ORDERS_SCENE)
 export class DoneOrdersScene {
+  private readonly logger = new Logger(DoneOrdersScene.name);
   constructor(
     private readonly ordersService: OrdersService,
     private readonly burialsService: BurialsService,
@@ -41,7 +43,7 @@ export class DoneOrdersScene {
 
   @WizardStep(1)
   async stepShowDoneOrders(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[DoneOrdersScene] stepShowDoneOrders: Виконані замовлення | UserId:', ctx.from?.id);
+    this.logger.log(`[DoneOrdersScene] stepShowDoneOrders`, { userId: ctx.from?.id });
     ctx.session = ctx.session || {};
     ctx.session.doneOrdersPage = 0;
     await this.showDoneOrdersPage(ctx, 0);
@@ -51,7 +53,7 @@ export class DoneOrdersScene {
 
   @Action(`${CB_PREFIX}next`)
   async onNextPage(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[DoneOrdersScene] onNextPage: Наступна сторінка | UserId:', ctx.from?.id, '| Page:', (ctx.session?.doneOrdersPage ?? 0) + 1);
+    this.logger.log(`[DoneOrdersScene] onNextPage`, { userId: ctx.from?.id, page: (ctx.session?.doneOrdersPage ?? 0) + 1 });
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
     const current = ctx.session?.doneOrdersPage ?? 0;
@@ -60,7 +62,7 @@ export class DoneOrdersScene {
 
   @Action(`${CB_PREFIX}prev`)
   async onPrevPage(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[DoneOrdersScene] onPrevPage: Попередня сторінка | UserId:', ctx.from?.id, '| Page:', (ctx.session?.doneOrdersPage ?? 0) - 1);
+    this.logger.log(`[DoneOrdersScene] onPrevPage`, { userId: ctx.from?.id, page: (ctx.session?.doneOrdersPage ?? 0) - 1 });
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
     const current = ctx.session?.doneOrdersPage ?? 0;
@@ -70,7 +72,7 @@ export class DoneOrdersScene {
   /** Індикатор сторінки — нічого не робимо */
   @Action(`${CB_PREFIX}noop`)
   async onNoop(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[DoneOrdersScene] onNoop: Індикатор сторінки | UserId:', ctx.from?.id);
+    this.logger.log(`[DoneOrdersScene] onNoop`, { userId: ctx.from?.id });
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
   }
@@ -79,7 +81,7 @@ export class DoneOrdersScene {
 
   @Action(new RegExp(`^${CB_PREFIX}open_(.+)$`))
   async onOpenOrder(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[DoneOrdersScene] onOpenOrder: Перегляд замовлення | UserId:', ctx.from?.id, '| OrderId:', ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '');
+    this.logger.log(`[DoneOrdersScene] onOpenOrder`, { userId: ctx.from?.id, orderId: ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '' });
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
@@ -90,7 +92,7 @@ export class DoneOrdersScene {
   /** Назад до списку з деталей */
   @Action(`${CB_PREFIX}back`)
   async onBackToList(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[DoneOrdersScene] onBackToList: Назад до списку | UserId:', ctx.from?.id);
+    this.logger.log(`[DoneOrdersScene] onBackToList`, { userId: ctx.from?.id });
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
     const current = ctx.session?.doneOrdersPage ?? 0;
@@ -101,7 +103,7 @@ export class DoneOrdersScene {
 
   @Action(`${CB_PREFIX}cancel`)
   async onCancel(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[DoneOrdersScene] onCancel: Скасування перегляду | UserId:', ctx.from?.id);
+    this.logger.log(`[DoneOrdersScene] onCancel`, { userId: ctx.from?.id });
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
     await ctx.reply(ExecutorConst.BackToMenuMessage, {
@@ -112,7 +114,7 @@ export class DoneOrdersScene {
 
   @Action(`${CB_PREFIX}menu`)
   async onBackToMenu(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[DoneOrdersScene] onBackToMenu: Повернення до меню | UserId:', ctx.from?.id);
+    this.logger.log(`[DoneOrdersScene] onBackToMenu`, { userId: ctx.from?.id });
     await ctx.answerCbQuery?.();
     await clearInlineKeyboard(ctx);
     await ctx.reply(ExecutorConst.BackToMenuMessage, {
@@ -125,19 +127,19 @@ export class DoneOrdersScene {
 
   @Hears(ExecutorMenu.MyOrders)
   async onMyOrdersMenu(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[DoneOrdersScene] onMyOrdersMenu: Кнопка "Мої замовлення" | UserId:', ctx.from?.id);
+    this.logger.log(`[DoneOrdersScene] onMyOrdersMenu`, { userId: ctx.from?.id });
     return ctx.scene.enter(SceneConst.MY_ORDERS_SCENE);
   }
 
   @Hears(ExecutorMenu.OpenOrders)
   async onOpenOrdersMenu(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[DoneOrdersScene] onOpenOrdersMenu: Кнопка "Відкриті замовлення" | UserId:', ctx.from?.id);
+    this.logger.log(`[DoneOrdersScene] onOpenOrdersMenu`, { userId: ctx.from?.id });
     return ctx.scene.enter(SceneConst.OPEN_ORDERS_SCENE);
   }
 
   @Hears(ExecutorMenu.DoneOrders)
   async onDoneOrdersMenu(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[DoneOrdersScene] onDoneOrdersMenu: Кнопка "Виконані замовлення" | UserId:', ctx.from?.id);
+    this.logger.log(`[DoneOrdersScene] onDoneOrdersMenu`, { userId: ctx.from?.id });
     ctx.session = ctx.session || {};
     ctx.session.doneOrdersPage = 0;
     await this.showDoneOrdersPage(ctx, 0);
@@ -145,7 +147,7 @@ export class DoneOrdersScene {
 
   @Hears(ExecutorMenu.Help)
   async onHelpMenu(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[DoneOrdersScene] onHelpMenu: Кнопка "Допомога" | UserId:', ctx.from?.id);
+    this.logger.log(`[DoneOrdersScene] onHelpMenu`, { userId: ctx.from?.id });
     await ctx.scene.leave();
     await ctx.reply(ExecutorConst.HelpPrompt, {
       reply_markup: Markup.inlineKeyboard([

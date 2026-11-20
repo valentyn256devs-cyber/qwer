@@ -1,4 +1,4 @@
-import { Inject } from '@nestjs/common';
+import { Inject, Logger } from '@nestjs/common';
 import { Action, Ctx, On, Wizard, WizardStep } from 'nestjs-telegraf';
 import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
@@ -47,6 +47,7 @@ const BEFORE_PHOTO_BUTTONS = (beforePhotosConfirmed: boolean) => {
 
 @Wizard(SceneConst.BEFORE_PHOTOS_SCENE)
 export class BeforePhotosScene {
+  private readonly logger = new Logger(BeforePhotosScene.name);
   constructor(
     private readonly ordersService: OrdersService,
     @Inject(IMAGE_STORAGE_SERVICE)
@@ -55,7 +56,7 @@ export class BeforePhotosScene {
 
   @WizardStep(1)
   async stepBeforePhotos(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[BeforePhotosScene] stepBeforePhotos: Фото "до" | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
+    this.logger.log(`[BeforePhotosScene] stepBeforePhotos`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
 
@@ -133,7 +134,7 @@ export class BeforePhotosScene {
    */
   @On('photo')
   async onBeforePhoto(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[BeforePhotosScene] onBeforePhoto: Отримано фото "до" | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId, '| SlotIndex:', ctx.session?.currentBeforeSlotIndex);
+    this.logger.log(`[BeforePhotosScene] onBeforePhoto`, { userId: ctx.from?.id, orderId: ctx.session?.orderId, slotIndex: ctx.session?.currentBeforeSlotIndex });
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
 
@@ -238,7 +239,7 @@ export class BeforePhotosScene {
 
   @Action('executor_next_checklist')
   async onNextChecklist(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[BeforePhotosScene] onNextChecklist: Наступний чекліст / відправка на перевірку | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
+    this.logger.log(`[BeforePhotosScene] onNextChecklist`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     await ctx.answerCbQuery?.();
 
     const order = await requireExecutorOrder(ctx, this.ordersService);
@@ -288,7 +289,7 @@ export class BeforePhotosScene {
 
   @Action('executor_back_to_details')
   async onBackToDetails(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[BeforePhotosScene] onBackToDetails: Назад до деталей | UserId:', ctx.from?.id);
+    this.logger.log(`[BeforePhotosScene] onBackToDetails`, { userId: ctx.from?.id });
     await ctx.answerCbQuery?.();
     return ctx.scene.enter(SceneConst.ORDER_DETAILS_SCENE);
   }

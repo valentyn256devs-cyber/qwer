@@ -1,4 +1,5 @@
 import { Action, Ctx, Hears, Wizard, WizardStep } from 'nestjs-telegraf';
+import { Logger } from '@nestjs/common';
 import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
 import { Scene as SceneConst, executorMainMenuButtons } from '../../telegram-constants';
@@ -11,11 +12,12 @@ import type { ExecutorWizardContext } from '../interfaces/executor-wizard-contex
 
 @Wizard(SceneConst.SUBMIT_SCENE)
 export class SubmitScene {
+  private readonly logger = new Logger(SubmitScene.name);
   constructor(private readonly ordersService: OrdersService) {}
 
   @WizardStep(1)
   async stepSubmit(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[SubmitScene] stepSubmit: Здача роботи на перевірку | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
+    this.logger.log(`[SubmitScene] stepSubmit`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
 
@@ -30,7 +32,7 @@ export class SubmitScene {
   /** Пропустити коментар → здати роботу на перевірку. */
   @Action('executor_skip_comment')
   async onSkipComment(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[SubmitScene] onSkipComment: Пропуск коментаря | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId);
+    this.logger.log(`[SubmitScene] onSkipComment`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     await ctx.answerCbQuery?.();
     await this.submitWork(ctx);
   }
@@ -38,7 +40,7 @@ export class SubmitScene {
   /** Текстовий коментар виконавця → здати роботу на перевірку. */
   @Hears(/./)
   async onCommentText(@Ctx() ctx: ExecutorWizardContext) {
-    console.log('[SubmitScene] onCommentText: Коментар виконавця | UserId:', ctx.from?.id, '| OrderId:', ctx.session?.orderId, '| Text:', (ctx.message as any)?.text?.trim());
+    this.logger.log(`[SubmitScene] onCommentText`, { userId: ctx.from?.id, orderId: ctx.session?.orderId, text: (ctx.message as any)?.text?.trim() });
     const text = (ctx.message as any)?.text?.trim();
     if (!text) return;
     await this.submitWork(ctx, text);
