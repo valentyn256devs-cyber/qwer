@@ -1,8 +1,12 @@
 import { Inject, Logger } from '@nestjs/common';
-import { Action, Ctx, On, Wizard, WizardStep } from 'nestjs-telegraf';
+import { Action, Ctx, Hears, On, Wizard, WizardStep } from 'nestjs-telegraf';
 import { Markup } from 'telegraf';
 import { OrdersService } from '../../../orders/orders.service';
-import { Scene as SceneConst } from '../../telegram-constants';
+import {
+  ExecutorMenu,
+  Scene as SceneConst,
+  executorMainMenuButtons,
+} from '../../telegram-constants';
 import { ExecutorConst } from '../model/executor-const';
 import { requireExecutorOrder, saveOrderPhoto, } from '../model/executor-scene-helpers';
 import { IMAGE_STORAGE_SERVICE } from '../../../images/image-storage.constants';
@@ -300,5 +304,50 @@ export class AfterPhotosScene {
     this.logger.log(`[AfterPhotosScene] onBackToSelfcheck`, { userId: ctx.from?.id });
     await ctx.answerCbQuery?.();
     return ctx.scene.enter(SceneConst.FINAL_SELFCHECK_SCENE);
+  }
+
+  // ==================== Кнопки головного меню (щоб не «застрягти» в сцені) ====================
+
+  @Hears(ExecutorMenu.OpenOrders)
+  async onOpenOrdersMenu(@Ctx() ctx: ExecutorWizardContext) {
+    this.logger.log(`[AfterPhotosScene] onOpenOrdersMenu`, { userId: ctx.from?.id });
+    return ctx.scene.enter(SceneConst.OPEN_ORDERS_SCENE);
+  }
+
+  @Hears(ExecutorMenu.MyOrders)
+  async onMyOrdersMenu(@Ctx() ctx: ExecutorWizardContext) {
+    this.logger.log(`[AfterPhotosScene] onMyOrdersMenu`, { userId: ctx.from?.id });
+    return ctx.scene.enter(SceneConst.MY_ORDERS_SCENE);
+  }
+
+  @Hears(ExecutorMenu.DoneOrders)
+  async onDoneOrdersMenu(@Ctx() ctx: ExecutorWizardContext) {
+    this.logger.log(`[AfterPhotosScene] onDoneOrdersMenu`, { userId: ctx.from?.id });
+    return ctx.scene.enter(SceneConst.DONE_ORDERS_SCENE);
+  }
+
+  @Hears(ExecutorMenu.Help)
+  async onHelpMenu(@Ctx() ctx: ExecutorWizardContext) {
+    this.logger.log(`[AfterPhotosScene] onHelpMenu`, { userId: ctx.from?.id });
+    await ctx.scene.leave();
+    await ctx.reply(ExecutorConst.HelpPrompt, {
+      reply_markup: Markup.inlineKeyboard([
+        [
+          Markup.button.callback(
+            ExecutorConst.ProblemButton,
+            'executor_report_problem_pick',
+          ),
+        ],
+        [
+          Markup.button.callback(
+            ExecutorConst.CannotCompleteHelpButton,
+            'executor_cannot_complete_pick',
+          ),
+        ],
+        [
+          Markup.button.callback(ExecutorConst.BackToMenu, 'executor_back_to_menu'),
+        ],
+      ]).reply_markup,
+    });
   }
 }
