@@ -4,7 +4,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ServicesModule } from './services/services.module';
 import { OrdersModule } from './orders/orders.module';
 import { TelegrafModule } from 'nestjs-telegraf';
-import { session } from 'telegraf';
+import { session, Middleware } from 'telegraf';
 import { TelegramClientModule } from "./telegram-bot/client/telegram-client.module";
 import { TelegramExecutorModule } from "./telegram-bot/executor/telegram-executor.module";
 import { TelegramBot } from "./telegram-bot/telegram-constants";
@@ -15,6 +15,32 @@ import { BotInitializerService } from "./telegram-bot/bot-init.service";
 import { sessionRecoveryMiddleware } from "./middleware/session-recovery.middleware";
 import { RedisSessionStore, buildRedisUrl } from "./middleware/redis-session-store";
 import { LoggerModule } from "./logger/logger.module";
+
+/**
+ * Будує масив сесійних middleware для бота.
+ * Якщо REDIS_ENABLED === false — повертає undefined (сесії не запускаються).
+ */
+function buildSessionMiddleware(
+  configService: ConfigService,
+  prefix: string,
+): readonly Middleware<any>[] | undefined {
+  if (!(configService.get<boolean>('REDIS_ENABLED') ?? true)) {
+    return undefined;
+  }
+
+  const redisUrl = buildRedisUrl(
+    configService.get<string>('REDIS_HOST') ?? 'localhost',
+    configService.get<string>('REDIS_PORT') ?? '6379',
+    configService.get<string>('REDIS_PASSWORD') ?? undefined,
+  );
+
+  return [
+    session({
+      store: new RedisSessionStore(redisUrl, prefix),
+    }),
+    sessionRecoveryMiddleware,
+  ];
+}
 
 @Module({
   imports: [
@@ -30,23 +56,10 @@ import { LoggerModule } from "./logger/logger.module";
         botName: TelegramBot.ClientBot,
         isGlobal: true,
         token: configService.get<string>('TELEGRAM_BOT_TOKEN') ?? '',
-        middlewares: [
-          ...(configService.get<boolean>('REDIS_ENABLED') ?? true
-            ? [
-                session({
-                  store: new RedisSessionStore(
-                    buildRedisUrl(
-                      configService.get<string>('REDIS_HOST') ?? 'localhost',
-                      configService.get<string>('REDIS_PORT') ?? '6379',
-                      configService.get<string>('REDIS_PASSWORD') ?? undefined,
-                    ),
-                    'telegraf:client:session:',
-                  ),
-                }),
-              ]
-            : [session()]),
-          sessionRecoveryMiddleware
-        ],
+        middlewares: buildSessionMiddleware(
+          configService,
+          'telegraf:client:session:',
+        ),
         include: [TelegramClientModule],
       }),
       inject: [ConfigService],
@@ -59,23 +72,10 @@ import { LoggerModule } from "./logger/logger.module";
       useFactory: (configService: ConfigService) => ({
         isGlobal: true,
         token: configService.get<string>('TELEGRAM_ADMIN_BOT_TOKEN') ?? '',
-        middlewares: [
-          ...(configService.get<boolean>('REDIS_ENABLED') ?? true
-            ? [
-                session({
-                  store: new RedisSessionStore(
-                    buildRedisUrl(
-                      configService.get<string>('REDIS_HOST') ?? 'localhost',
-                      configService.get<string>('REDIS_PORT') ?? '6379',
-                      configService.get<string>('REDIS_PASSWORD') ?? undefined,
-                    ),
-                    'telegraf:admin:session:',
-                  ),
-                }),
-              ]
-            : [session()]),
-          sessionRecoveryMiddleware
-        ],
+        middlewares: buildSessionMiddleware(
+          configService,
+          'telegraf:admin:session:',
+        ),
         include: [TelegramAdminModule],
       }),
       inject: [ConfigService],
@@ -89,22 +89,10 @@ import { LoggerModule } from "./logger/logger.module";
         botName: TelegramBot.ExecutorBot,
         isGlobal: true,
         token: configService.get<string>('TELEGRAM_EXECUTOR_BOT_TOKEN') ?? '',
-        middlewares: [
-          ...(configService.get<boolean>('REDIS_ENABLED') ?? true
-            ? [
-                session({
-                  store: new RedisSessionStore(
-                    buildRedisUrl(
-                      configService.get<string>('REDIS_HOST') ?? 'localhost',
-                      configService.get<string>('REDIS_PORT') ?? '6379',
-                      configService.get<string>('REDIS_PASSWORD') ?? undefined,
-                    ),
-                    'telegraf:executor:session:',
-                  ),
-                }),
-              ]
-            : [session()]),
-          sessionRecoveryMiddleware],
+        middlewares: buildSessionMiddleware(
+          configService,
+          'telegraf:executor:session:',
+        ),
         include: [TelegramExecutorModule],
       }),
       inject: [ConfigService],
