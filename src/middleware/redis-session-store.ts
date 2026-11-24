@@ -57,10 +57,6 @@ export class RedisSessionStore {
     this.redis.on('error', (err) => {
       console.warn(`[RedisSessionStore] Redis error: ${err.message}`);
     });
-
-    this.redis.connect().catch((err) => {
-      console.warn(`[RedisSessionStore] Redis connect failed: ${err.message}`);
-    });
   }
 
   async get(key: string): Promise<Record<string, any> | undefined> {
@@ -94,52 +90,3 @@ export class RedisSessionStore {
     }
   }
 }
-
-/*export class RedisSessionStore {
-  private readonly redis: Redis;
-  private readonly prefix: string;
-
-  constructor(redisUrl: string, prefix = 'telegraf:session:') {
-    this.redis = new Redis(redisUrl, {
-      lazyConnect: true,
-      maxRetriesPerRequest: 1,
-      enableOfflineQueue: false,
-    });
-
-    // Приглушуємо необроблені події помилок підключення, щоб бот не падав
-    this.redis.on('error', (err) => {
-      console.warn(`[RedisSessionStore] Redis error: ${err.message}`);
-    });
-
-    this.prefix = prefix;
-    this.redis.connect().catch((err) => {
-      console.warn(`[RedisSessionStore] Redis connect failed: ${err.message}`);
-    });
-  }
-
-  async get(key: string): Promise<Record<string, any> | undefined> {
-    try {
-      const raw = await this.redis.get(this.prefix + key);
-      return raw ? JSON.parse(raw) : undefined;
-    } catch (err) {
-      console.warn(`[RedisSessionStore] get failed: ${(err as Error).message}`);
-      return undefined;
-    }
-  }
-
-  async set(key: string, session: Record<string, any>): Promise<void> {
-    try {
-      await this.redis.set(this.prefix + key, JSON.stringify(session));
-    } catch (err) {
-      console.warn(`[RedisSessionStore] set failed: ${(err as Error).message}`);
-    }
-  }
-
-  async delete(key: string): Promise<void> {
-    try {
-      await this.redis.del(this.prefix + key);
-    } catch (err) {
-      console.warn(`[RedisSessionStore] delete failed: ${(err as Error).message}`);
-    }
-  }
-}*/

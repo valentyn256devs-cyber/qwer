@@ -16,16 +16,27 @@ import { sessionRecoveryMiddleware } from "./middleware/session-recovery.middlew
 import { RedisSessionStore, buildRedisUrl } from "./middleware/redis-session-store";
 import { LoggerModule } from "./logger/logger.module";
 
+function parseBooleanEnv(value: unknown): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'string') {
+    return ['true', '1', 'yes', 'on'].includes(value.trim().toLowerCase());
+  }
+  return false;
+}
+
 /**
  * Будує масив сесійних middleware для бота.
- * Якщо REDIS_ENABLED === false — повертає undefined (сесії не запускаються).
+ * Якщо REDIS_ENABLED === true — використовується RedisSessionStore (постійні сесії).
+ * Якщо false — використовується стандартна in-memory сесія (сцени працюють, але не постійні).
  */
 function buildSessionMiddleware(
   configService: ConfigService,
   prefix: string,
 ): readonly Middleware<any>[] | undefined {
-  if (!(configService.get<boolean>('REDIS_ENABLED') ?? false)) {
-    return undefined;
+  const enabled = parseBooleanEnv(configService.get('REDIS_ENABLED'));
+
+  if (!enabled) {
+    return [session()];
   }
 
   const redisUrl = buildRedisUrl(
@@ -56,6 +67,10 @@ function buildSessionMiddleware(
         botName: TelegramBot.ClientBot,
         isGlobal: true,
         token: configService.get<string>('TELEGRAM_BOT_TOKEN') ?? '',
+        // Запуск відкладено до OnApplicationBootstrap (BotInitializerService),
+        // щоб ListenersExplorerService.onModuleInit() вчасно зареєстрував
+        // Scenes.Stage middleware і ctx.scene був доступний для оновлень.
+        // launchOptions: false,
         middlewares: buildSessionMiddleware(
           configService,
           'telegraf:client:session:',
@@ -72,6 +87,10 @@ function buildSessionMiddleware(
       useFactory: (configService: ConfigService) => ({
         isGlobal: true,
         token: configService.get<string>('TELEGRAM_ADMIN_BOT_TOKEN') ?? '',
+        // Запуск відкладено до OnApplicationBootstrap (BotInitializerService),
+        // щоб ListenersExplorerService.onModuleInit() вчасно зареєстрував
+        // Scenes.Stage middleware і ctx.scene був доступний для оновлень.
+        // launchOptions: false,
         middlewares: buildSessionMiddleware(
           configService,
           'telegraf:admin:session:',
@@ -89,6 +108,10 @@ function buildSessionMiddleware(
         botName: TelegramBot.ExecutorBot,
         isGlobal: true,
         token: configService.get<string>('TELEGRAM_EXECUTOR_BOT_TOKEN') ?? '',
+        // Запуск відкладено до OnApplicationBootstrap (BotInitializerService),
+        // щоб ListenersExplorerService.onModuleInit() вчасно зареєстрував
+        // Scenes.Stage middleware і ctx.scene був доступний для оновлень.
+        // launchOptions: false,
         middlewares: buildSessionMiddleware(
           configService,
           'telegraf:executor:session:',

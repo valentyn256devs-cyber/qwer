@@ -46,7 +46,15 @@ export class TelegramExecutorListener {
           `${PerformerConst.OnboardingWelcomeTitle}\n\n${PerformerConst.OnboardingWelcomeDescription}`,
           { parse_mode: 'HTML' },
         );
-        return ctx.scene.enter(Scene.CREATE_PERFORMER_WIZARD);
+        // ctx.scene is provided by telegraf's Scenes.Stage middleware. It is
+        // registered by ListenersExplorerService.onModuleInit(), which runs
+        // after bot.launch() in nestjs-telegraf's createBotFactory. If a /start
+        // update arrives during that initialization window, ctx.scene may be
+        // undefined — guard against it to avoid crashing the handler.
+        if (ctx.scene) {
+          return ctx.scene.enter(Scene.CREATE_PERFORMER_WIZARD);
+        }
+        this.logger.warn('ctx.scene is not available yet, skipping performer onboarding scene entry');
       }
     } catch (error) {
       // Якщо перевірка не вдалася — не блокуємо користувача
