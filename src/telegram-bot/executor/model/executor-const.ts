@@ -173,15 +173,15 @@ export const ExecutorConst = {
   NewOrderSectorLabel: '  • Сектор / ряд / номер:',
   NewOrderGpsLabel: '  • GPS:',
   NewOrderCommentLabel: '💬 <b>Коментар клієнта:</b>',
-  NewOrderConfirmButton: '✅ Підтвердити',
-  NewOrderDeclineButton: '🚫 Відказуюсь',
+  NewOrderConfirmButton: '✅ Взяти в роботу',
+  NewOrderDeclineButton: '🚫 Відмовитись',
   NewOrderDash: '—',
   NewOrderNoAdditionalServices: '—',
   NewOrderNoComment: '—',
   NewOrderConfirmedByMe: (id: string) =>
     `✅ <b>Ви підтвердили замовлення №${id}</b>\n\nВоно з’явилося у розділі «Мої замовлення».`,
   NewOrderDeclinedByMe: (id: string) =>
-    `🚫 <b>Ви відказалися від замовлення №${id}</b>`,
+    `🚫 <b>Ви відмовились від замовлення №${id}</b>`,
   NewOrderTakenByOther: (id: string) =>
     `🔒 <b>Замовлення №${id} вже підтверджено іншим виконавцем</b>`,
   NewOrderConfirmError: '❌ Не вдалося підтвердити замовлення. Спробуйте пізніше.',

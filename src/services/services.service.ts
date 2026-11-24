@@ -72,7 +72,7 @@ export class ServicesService implements OnApplicationBootstrap {
    * Допоміжний метод для строгої типізації та мапінгу Parse.Object
    */
   private mapServiceFields(service: Parse.Object) {
-    this.logger.log(`[ServicesService] mapServiceFields`, { serviceId: service.id });
+    // this.logger.log(`[ServicesService] mapServiceFields`, { serviceId: service.id });
     return ServiceResponseDto.fromParse(service);
   }
 }

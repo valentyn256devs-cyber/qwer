@@ -3,7 +3,7 @@ import {Logger} from "@nestjs/common";
 import {OrdersService} from "../../orders/orders.service";
 import {Context, Markup} from "telegraf";
 import {OrderStepUa} from "../telegram-constants";
-import {UnassignReason} from "../../orders/models/order-status";
+import { OrderStatus, UnassignReason } from "../../orders/models/order-status";
 
 @Update()
 export class TelegramAdminListener {
@@ -194,6 +194,9 @@ export class TelegramAdminListener {
         // await ctx.editMessageText(text, { parse_mode: 'HTML' });
         await ctx.reply(text, { parse_mode: 'HTML' })
       }
+
+      // Оновлюємо статус замовлення
+      await this.ordersService.updateStatus(orderId, OrderStatus.AvailableForExecutor);
     } catch (error) {
       console.error(error);
       await ctx.answerCbQuery('Помилка оновлення статусу.');
