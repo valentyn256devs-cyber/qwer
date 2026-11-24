@@ -24,7 +24,7 @@ function buildSessionMiddleware(
   configService: ConfigService,
   prefix: string,
 ): readonly Middleware<any>[] | undefined {
-  if (!(configService.get<boolean>('REDIS_ENABLED') ?? true)) {
+  if (!(configService.get<boolean>('REDIS_ENABLED') ?? false)) {
     return undefined;
   }
 
