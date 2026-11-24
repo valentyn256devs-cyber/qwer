@@ -31,16 +31,20 @@ import { LoggerModule } from "./logger/logger.module";
         isGlobal: true,
         token: configService.get<string>('TELEGRAM_BOT_TOKEN') ?? '',
         middlewares: [
-          session({
-            store: new RedisSessionStore(
-              buildRedisUrl(
-                configService.get<string>('REDIS_HOST') ?? 'localhost',
-                configService.get<string>('REDIS_PORT') ?? '6379',
-                configService.get<string>('REDIS_PASSWORD') ?? undefined,
-              ),
-              'telegraf:client:session:',
-            ),
-          }),
+          ...(configService.get<boolean>('REDIS_ENABLED') ?? true
+            ? [
+                session({
+                  store: new RedisSessionStore(
+                    buildRedisUrl(
+                      configService.get<string>('REDIS_HOST') ?? 'localhost',
+                      configService.get<string>('REDIS_PORT') ?? '6379',
+                      configService.get<string>('REDIS_PASSWORD') ?? undefined,
+                    ),
+                    'telegraf:client:session:',
+                  ),
+                }),
+              ]
+            : [session()]),
           sessionRecoveryMiddleware
         ],
         include: [TelegramClientModule],
@@ -56,16 +60,20 @@ import { LoggerModule } from "./logger/logger.module";
         isGlobal: true,
         token: configService.get<string>('TELEGRAM_ADMIN_BOT_TOKEN') ?? '',
         middlewares: [
-          session({
-            store: new RedisSessionStore(
-              buildRedisUrl(
-                configService.get<string>('REDIS_HOST') ?? 'localhost',
-                configService.get<string>('REDIS_PORT') ?? '6379',
-                configService.get<string>('REDIS_PASSWORD') ?? undefined,
-              ),
-              'telegraf:admin:session:',
-            )
-          }),
+          ...(configService.get<boolean>('REDIS_ENABLED') ?? true
+            ? [
+                session({
+                  store: new RedisSessionStore(
+                    buildRedisUrl(
+                      configService.get<string>('REDIS_HOST') ?? 'localhost',
+                      configService.get<string>('REDIS_PORT') ?? '6379',
+                      configService.get<string>('REDIS_PASSWORD') ?? undefined,
+                    ),
+                    'telegraf:admin:session:',
+                  ),
+                }),
+              ]
+            : [session()]),
           sessionRecoveryMiddleware
         ],
         include: [TelegramAdminModule],
@@ -82,16 +90,20 @@ import { LoggerModule } from "./logger/logger.module";
         isGlobal: true,
         token: configService.get<string>('TELEGRAM_EXECUTOR_BOT_TOKEN') ?? '',
         middlewares: [
-          session({
-            store: new RedisSessionStore(
-              buildRedisUrl(
-                configService.get<string>('REDIS_HOST') ?? 'localhost',
-                configService.get<string>('REDIS_PORT') ?? '6379',
-                configService.get<string>('REDIS_PASSWORD') ?? undefined,
-              ),
-              'telegraf:executor:session:',
-            )
-          }),
+          ...(configService.get<boolean>('REDIS_ENABLED') ?? true
+            ? [
+                session({
+                  store: new RedisSessionStore(
+                    buildRedisUrl(
+                      configService.get<string>('REDIS_HOST') ?? 'localhost',
+                      configService.get<string>('REDIS_PORT') ?? '6379',
+                      configService.get<string>('REDIS_PASSWORD') ?? undefined,
+                    ),
+                    'telegraf:executor:session:',
+                  ),
+                }),
+              ]
+            : [session()]),
           sessionRecoveryMiddleware],
         include: [TelegramExecutorModule],
       }),
