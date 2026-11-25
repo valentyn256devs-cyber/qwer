@@ -159,6 +159,7 @@ export const ExecutorConst = {
   OpenOrdersCardCommentLabel: '📝 Коментар:',
   OpenOrdersCardAddressHint: 'див. картку',
   OpenOrdersCardDash: '—',
+  OpenOrdersCardNoComment: 'нема коментаря',
 
   // ==================== Сповіщення виконавцю про нове замовлення ====================
   NewOrderTitle: (id: string) => `🆕 <b>Нове замовлення №${id}</b>`,

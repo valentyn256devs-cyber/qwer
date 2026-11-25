@@ -29,31 +29,37 @@ export class OpenOrdersScene {
           ? ` ${ExecutorConst.OrderDetailsOverdue}`
           : '';
         const msg =
-          `${ExecutorConst.OpenOrdersCardTitle(order.id)}${overdueMark}\n` +
-          `#\u200B${order.id}\n` +
+          `${ExecutorConst.OpenOrdersCardTitle(order.id)}${overdueMark}\n\n` +
+          //
           `${ExecutorConst.OpenOrdersCardServiceLabel} <b>${order.service?.name ?? ExecutorConst.OpenOrdersCardDash}</b>\n` +
-          `${ExecutorConst.OpenOrdersCardAddressLabel} ${order.details?.burialId ? ExecutorConst.OpenOrdersCardAddressHint : ExecutorConst.OpenOrdersCardDash}\n` +
+          `${ExecutorConst.OpenOrdersCardAddressLabel} ${order.details?.burialId ? ExecutorConst.OpenOrdersCardAddressHint : ExecutorConst.OpenOrdersCardDash}\n\n` +
+          //
           `${ExecutorConst.OpenOrdersCardDateLabel} ${order.deadlines?.serviceDateFrom ? new Date(order.deadlines.serviceDateFrom).toLocaleDateString('uk-UA') : ExecutorConst.OpenOrdersCardDash}\n` +
           `${ExecutorConst.OpenOrdersCardDeadlineLabel} ${(order as any).deadlineDisplay?.executionDeadline ?? ExecutorConst.OpenOrdersCardDash}\n` +
           `${ExecutorConst.OpenOrdersCardRemainingLabel} ${(order as any).deadlineDisplay?.remaining ?? ExecutorConst.OpenOrdersCardDash}\n` +
-          `${ExecutorConst.OpenOrdersCardCommentLabel} ${order.report?.adminComment ?? ExecutorConst.OpenOrdersCardDash}`;
+          `${ExecutorConst.OpenOrdersCardCommentLabel} ${order.report?.adminComment || ExecutorConst.OpenOrdersCardNoComment}`;
 
-        await ctx.reply(msg, {
+        const finalText = msg + '\n\n' +  ExecutorConst.OpenOrdersFooter;
+
+        await ctx.reply(finalText, {
           parse_mode: 'HTML',
           reply_markup: Markup.inlineKeyboard([
             [
               Markup.button.callback(ExecutorConst.ViewButton, `executor_view_order_${order.id}`),
               Markup.button.callback(ExecutorConst.TakeButton, `executor_accept_order_${order.id}`),
             ],
+            [
+              Markup.button.callback(ExecutorConst.BackToMenu, 'executor_back_to_menu'),
+            ],
           ]).reply_markup,
         });
       }
 
-      await ctx.reply(ExecutorConst.OpenOrdersFooter, {
+      /*await ctx.reply(ExecutorConst.OpenOrdersFooter, {
         reply_markup: Markup.inlineKeyboard([
           [Markup.button.callback(ExecutorConst.BackToMenu, 'executor_back_to_menu')],
         ]).reply_markup,
-      });
+      });*/
     } catch (error) {
       this.logger.error(`[OpenOrdersScene] stepOpenOrders`, { error: (error as Error).message });
       await ctx.reply(ExecutorConst.OpenOrdersError);
@@ -85,5 +91,14 @@ export class OpenOrdersScene {
     ctx.session = ctx.session || {};
     ctx.session.orderId = orderId;
     return ctx.scene.enter(SceneConst.ACCEPT_ORDER_SCENE);
+  }
+
+  /** Назад до меню. */
+  @Action('executor_back_to_menu')
+  async onBackToMenu(@Ctx() ctx: ExecutorWizardContext) {
+    this.logger.log(`[OpenOrdersScene] onBackToMenu`, { userId: ctx.from?.id });
+    await ctx.answerCbQuery?.();
+    await ctx.reply(ExecutorConst.BackToMenuMessage, { parse_mode: 'HTML' });
+    return ctx.scene.leave();
   }
 }
