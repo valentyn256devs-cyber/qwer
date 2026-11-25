@@ -47,12 +47,12 @@ export class OrdersService {
   private readonly statusHistoryClassName = OrderStatusHistoryTable.TableName;
 
   /** Req 40: deadline notification intervals (hours) — configurable */
-  private readonly deadlineNotificationConfig = {
+  /*private readonly deadlineNotificationConfig = {
     executorAfterAssignment: true,
     executor24h: 24,
     executor3h: 3,
     notifyOnOverdue: true,
-  };
+  };*/
 
   /**
    * In-memory tracking of order-notification messages sent to performers.
@@ -86,6 +86,22 @@ export class OrdersService {
     OrderStatus.InProgress,
     OrderStatus.RevisionRequired,
   ]);
+  /**
+   * Зберігає сесію уточнення клієнта: зв'язує telegramId клієнта з chatId адміна та orderId.
+   * Коли клієнт надішле текст, його буде переслано цьому адміну.
+   */
+  private readonly clientClarificationSessions = new Map<
+    string,
+    { adminChatId: string; orderId: string }
+  >();
+  /**
+   * Зберігає повідомлення від клієнта, яке адмін має переслати виконавцю.
+   * Ключ: chatId адміна.
+   */
+  private readonly clientMessagesForAdmin = new Map<
+    string,
+    { orderId: string; messageText: string; clientTelegramId: string }
+  >();
 
   constructor(
     private back4app: Back4appService,
@@ -102,26 +118,167 @@ export class OrdersService {
   }
 
   /**
-   * Надсилає повідомлення всім активним адмінам з бази даних.
-   * Замість використання одного TELEGRAM_ADMIN_CHAT_ID з .env.
+   * Повертає всіх активних адмінів.
    */
-  private async notifyAllAdmins(text: string, options?: any): Promise<void> {
+  /*public async getAllActiveAdmins() {
+    return this.adminService.findAllActive();
+  }*/
+
+  /**
+   * Надсилає сповіщення всім адмінам про те, що виконавець не знайшов місце поховання.
+   * Повідомлення містить номер замовлення, дані виконавця та кнопки дії.
+   */
+  public async sendNotFoundToAdmins(
+    orderId: string,
+    executorName: string,
+    executorPhone: string,
+    executorTelegramId: string,
+  ): Promise<void> {
+    this.logger.log(`[OrdersService] sendNotFoundToAdmins`, { orderId, executorTelegramId });
+
+    const order = await this.findById(orderId);
+    if (!order) return;
+
+    const text = ExecutorConst.NotFoundAdminTitle(orderId, executorName, executorPhone);
+
     const admins = await this.adminService.findAllActive();
-    if (admins.length === 0) {
-      this.logger.warn('[OrdersService] notifyAllAdmins: немає активних адмінів у базі');
-      return;
-    }
     for (const admin of admins) {
       if (!admin.telegramId) continue;
       try {
         await this.adminBot.telegram.sendMessage(admin.telegramId, text, {
           parse_mode: 'HTML',
-          ...options,
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: ExecutorConst.AdminClarifyClientButton,
+                  callback_data: `admin_notfound_clarify_client_${orderId}`
+                },
+                { text: ExecutorConst.AdminWriteMessageButton, callback_data: `admin_write_message_${orderId}` },
+              ],
+            ],
+          },
         });
       } catch (error) {
         console.error(`Не вдалося надіслати повідомлення адміну ${admin.telegramId}:`, error);
       }
     }
+  }
+
+  /**
+   * Надсилає повідомлення клієнту з проханням уточнити інформацію про місце поховання.
+   */
+  public async sendClarificationToClient(
+    clientTelegramId: string,
+    orderId: string,
+  ): Promise<void> {
+    this.logger.log(`[OrdersService] sendClarificationToClient`, { clientTelegramId, orderId });
+
+    try {
+      await this.clientBot.telegram.sendMessage(
+        clientTelegramId,
+        ExecutorConst.NotFoundClientTitle(orderId),
+        { parse_mode: 'HTML' },
+      );
+    } catch (error) {
+      console.error(`Не вдалося надіслати повідомлення клієнту ${clientTelegramId}:`, error);
+    }
+  }
+
+  /**
+   * Надсилає повідомлення виконавцю (текст від адміна або переслане від клієнта)
+   * з кнопками "Знайшов" / "Не знайдено".
+   */
+  public async sendMessageToExecutorWithButtons(
+    executorTelegramId: string,
+    orderId: string,
+    senderName: string,
+    messageText: string,
+  ): Promise<void> {
+    this.logger.log(`[OrdersService] sendMessageToExecutorWithButtons`, { executorTelegramId, orderId });
+
+    const text = ExecutorConst.NotFoundExecutorTitle(orderId, senderName, messageText);
+
+    try {
+      await this.executorBot.telegram.sendMessage(
+        executorTelegramId,
+        text,
+        {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: ExecutorConst.FoundButton, callback_data: `executor_msg_found_${orderId}` },
+                { text: ExecutorConst.NotFoundButton, callback_data: `executor_msg_not_found_${orderId}` },
+              ],
+            ],
+          },
+        },
+      );
+    } catch (error) {
+      console.error(`Не вдалося надіслати повідомлення виконавцю ${executorTelegramId}:`, error);
+    }
+  }
+
+  /**
+   * Отримує telegramId виконавця за його executorId.
+   */
+  public async getExecutorTelegramId(executorId: string): Promise<string | null> {
+    try {
+      const performer = await this.performersService.findById(executorId);
+      return performer?.telegramId ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Реєструє сесію уточнення для клієнта.
+   */
+  public registerClientClarificationSession(
+    clientTelegramId: string,
+    adminChatId: string,
+    orderId: string,
+  ): void {
+    this.clientClarificationSessions.set(clientTelegramId, { adminChatId, orderId });
+  }
+
+  /**
+   * Отримує та видаляє сесію уточнення для клієнта.
+   */
+  public popClientClarificationSession(clientTelegramId: string): { adminChatId: string; orderId: string } | undefined {
+    const session = this.clientClarificationSessions.get(clientTelegramId);
+    if (session) {
+      this.clientClarificationSessions.delete(clientTelegramId);
+    }
+    return session;
+  }
+
+  /**
+   * Зберігає повідомлення клієнта для адміна (для подальшого пересилання виконавцю).
+   */
+  public storeClientMessageForAdmin(
+    adminChatId: string,
+    orderId: string,
+    messageText: string,
+    clientTelegramId: string,
+  ): void {
+    this.clientMessagesForAdmin.set(adminChatId, { orderId, messageText, clientTelegramId });
+  }
+
+  /**
+   * Отримує та видаляє повідомлення клієнта для адміна.
+   */
+  public popClientMessageForAdmin(adminChatId: string): {
+    orderId: string;
+    messageText: string;
+    clientTelegramId: string
+  } | undefined {
+    const msg = this.clientMessagesForAdmin.get(adminChatId);
+    if (msg) {
+      this.clientMessagesForAdmin.delete(adminChatId);
+    }
+    return msg;
   }
 
   /**
@@ -321,8 +478,6 @@ export class OrdersService {
     adminComment?: string,
   ) {
     this.logger.log(`[OrdersService] uploadReportPhotos`, { id, type, base64Files, adminComment });
-    // const query = new this.back4app.parse.Query(this.orderClassName);
-    const query = new Parse.Query(this.orderClassName);
 
     try {
       const order = await this.getOrderObject(id);
@@ -513,7 +668,7 @@ export class OrdersService {
    * @param id Order objectId
    * @returns об'єкт відповідей { [stepId]: { answer, answeredAt, answeredBy } }
    */
-  async getChecklistAnswers(
+  /*async getChecklistAnswers(
     id: string,
   ): Promise<Record<string, { answer: string; answeredAt: Date; answeredBy: string }>> {
     this.logger.log(`[OrdersService] getChecklistAnswers`, { id });
@@ -523,7 +678,7 @@ export class OrdersService {
         | Record<string, { answer: string; answeredAt: Date; answeredBy: string }>
         | undefined) ?? {}
     );
-  }
+  }*/
 
   /**
    * ✅ Метод ПІДТВЕРДЖЕННЯ заявки адміном + сповіщення клієнта
@@ -622,13 +777,12 @@ export class OrdersService {
 
     await this.notifyAllAdmins(text);
   }
-  // ==================== Хелпери для форматування сповіщень ====================
 
   /**
    * Spовіщає адміністратора про те, що виконавець взяв замовлення.
    * Надсилає номер замовлення, дані виконавця, телефон, фото «до» та кнопки підтвердження/уточнення.
    */
-  async notifyAdminExecutorAssigned(
+  /*async notifyAdminExecutorAssigned(
     orderId: string,
     executorTelegramId: string,
   ): Promise<void> {
@@ -678,7 +832,9 @@ export class OrdersService {
     };
 
     await this.notifyAllAdmins(text, options);
-  }
+  }*/
+
+  // ==================== Хелпери для форматування сповіщень ====================
 
   /**
    * Адміністратор підтверджує виконавця. Виконавець може приступати до виконання.
@@ -769,8 +925,6 @@ export class OrdersService {
     }
   }
 
-  // ==================== Admin confirmation of executor assignment ====================
-
   /**
    * Виконавець відповідає на уточнення адміністратора (фото та/або коментар).
    */
@@ -814,6 +968,8 @@ export class OrdersService {
       console.error('Не вдалося надіслати відповідь адміністратору:', error);
     }
   }
+
+  // ==================== Admin confirmation of executor assignment ====================
 
   /**
    * Spовіщає адміністратора про завантажені фото «до» для перевірки.
@@ -1031,8 +1187,6 @@ export class OrdersService {
     }
   }
 
-  // ==================== Admin review of before photos ====================
-
   /**
    * Виконавець відправляє роботу на перевірку адміністратору.
    * Статус: InProgress → AwaitingCompletionReview.
@@ -1194,6 +1348,8 @@ export class OrdersService {
     }
   }
 
+  // ==================== Admin review of before photos ====================
+
   /**
    * Адміністратор підтверджує виконання робіт.
    * Статус: AwaitingCompletionReview → Done.
@@ -1273,8 +1429,6 @@ export class OrdersService {
     }
   }
 
-  // ==================== Submission for completion review ====================
-
   /**
    * ❌ Метод ВІДХИЛЕННЯ заявки адміном + сповіщення клієнта
    */
@@ -1306,6 +1460,8 @@ export class OrdersService {
 
     return updatedOrder;
   }
+
+  // ==================== Submission for completion review ====================
 
   /**
    * 🔍 Метод запиту на УТОЧНЕННЯ даних + сповіщення клієнта
@@ -1365,7 +1521,7 @@ export class OrdersService {
 
   async startExecution(orderId: string, executorId: string) {
     this.logger.log(`[OrdersService] startExecution`, { orderId, executorId });
-    const query = new Parse.Query(this.orderClassName);
+
     try {
       const order = await this.getOrderObject(orderId);
       const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
@@ -1384,7 +1540,6 @@ export class OrdersService {
 
   async submitForReview(orderId: string, executorId: string, comment?: string) {
     this.logger.log(`[OrdersService] submitForReview`, { orderId, executorId, comment });
-    // const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
       // const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
@@ -1406,7 +1561,6 @@ export class OrdersService {
 
   async assignExecutor(orderId: string, executorId: string, assignedBy: string) {
     this.logger.log(`[OrdersService] assignExecutor`, { orderId, executorId, assignedBy });
-    // const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
       const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
@@ -1450,7 +1604,6 @@ export class OrdersService {
    */
   async unassignExecutor(orderId: string, adminId: string, reason: UnassignReason, comment?: string) {
     this.logger.log(`[OrdersService] unassignExecutor`, { orderId, adminId, reason, comment });
-    const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
       const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
@@ -1481,9 +1634,8 @@ export class OrdersService {
    * 🔄 Change Executor
    * Адмін може вибрати іншого виконавця. Прогрес не втрачається.
    */
-  async changeExecutor(orderId: string, newExecutorId: string, adminId: string, reason?: string) {
+  /*async changeExecutor(orderId: string, newExecutorId: string, adminId: string, reason?: string) {
     this.logger.log(`[OrdersService] changeExecutor`, { orderId, newExecutorId, adminId, reason });
-    const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
       const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
@@ -1514,7 +1666,7 @@ export class OrdersService {
       if (error instanceof BadRequestException) throw error;
       throw new BadRequestException(`Помилка зміни виконавця: ${(error as Error).message}`);
     }
-  }
+  }*/
 
   /**
    * 👑 Take Over
@@ -1523,7 +1675,6 @@ export class OrdersService {
    */
   async takeOverExecutor(orderId: string, adminId: string) {
     this.logger.log(`[OrdersService] takeOverExecutor`, { orderId, adminId });
-    const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
       const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
@@ -1563,7 +1714,6 @@ export class OrdersService {
     photoIds?: string[],
   ) {
     this.logger.log(`[OrdersService] revisionRequired`, { orderId, adminId, description, checklistSteps, photoIds });
-    const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
       const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
@@ -1592,9 +1742,8 @@ export class OrdersService {
     }
   }
 
-  async resubmitForReview(orderId: string, executorId: string, comment?: string) {
+  /*async resubmitForReview(orderId: string, executorId: string, comment?: string) {
     this.logger.log(`[OrdersService] resubmitForReview`, { orderId, executorId, comment });
-    const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
       const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
@@ -1626,11 +1775,10 @@ export class OrdersService {
     } catch (error) {
       throw new BadRequestException(`Помилка повторної здачі: ${(error as Error).message}`);
     }
-  }
+  }*/
 
   async approveCompletion(orderId: string, adminId: string) {
     this.logger.log(`[OrdersService] approveCompletion`, { orderId, adminId });
-    const query = new Parse.Query(this.orderClassName);
     try {
       const order = await this.getOrderObject(orderId);
       const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
@@ -1809,7 +1957,6 @@ export class OrdersService {
 
   async clientCancelOrder(orderId: string, telegramId: string, reason?: string, comment?: string) {
     this.logger.log(`[OrdersService] clientCancelOrder`, { orderId, telegramId, reason, comment });
-    const query = new Parse.Query(this.orderClassName);
     const order = await this.getOrderObject(orderId);
     const status = order.get(OrderTable.Fields.Status) as OrderStatus;
     const ownerTg = order.get(OrderTable.Fields.TelegramId) as string;
@@ -1828,7 +1975,6 @@ export class OrdersService {
   async createCancellationRequest(orderId: string, requestedBy: string, reason: string, comment?: string) {
     this.logger.log(`[OrdersService] createCancellationRequest`, { orderId, requestedBy, reason, comment });
     if (!reason?.trim()) throw new BadRequestException('Причина скасування обовʼязкова');
-    const query = new Parse.Query(this.orderClassName);
     const order = await this.getOrderObject(orderId);
     const status = order.get(OrderTable.Fields.Status) as OrderStatus;
     if (status === OrderStatus.Done || status === OrderStatus.Canceled) {
@@ -1859,7 +2005,6 @@ export class OrdersService {
     if (ExecutorInabilityReasonsRequiringComment.includes(reason) && !comment?.trim()) {
       throw new BadRequestException('Для обраної причини коментар обовʼязковий');
     }
-    const query = new Parse.Query(this.orderClassName);
     const order = await this.getOrderObject(orderId);
     const status = order.get(OrderTable.Fields.Status) as OrderStatus;
     const currentExecutor = order.get(OrderTable.Fields.AssignedExecutorId) as string | null;
@@ -1893,8 +2038,6 @@ export class OrdersService {
     return this.mapOrderFields(order);
   }
 
-  // ==================== Req 38-39: Deadline & Overdue helpers ====================
-
   /** Req 44,46: Admin cancels order with audit */
   async adminCancelOrder(
     orderId: string,
@@ -1905,7 +2048,6 @@ export class OrdersService {
   ) {
     this.logger.log(`[OrdersService] adminCancelOrder`, { orderId, adminId, reason, comment, commentForClient });
     if (!reason?.trim()) throw new BadRequestException('Причина скасування обовʼязкова');
-    const query = new Parse.Query(this.orderClassName);
     const order = await this.getOrderObject(orderId);
     const status = order.get(OrderTable.Fields.Status) as OrderStatus;
     if (status === OrderStatus.Done) throw new BadRequestException('Виконане замовлення не можна скасувати');
@@ -1913,6 +2055,8 @@ export class OrdersService {
     const cancellationRequestId = order.get(OrderTable.Fields.CancellationRequestId) as string | null;
     return this.applyCancellation(order, `admin:${adminId}`, reason, comment ?? commentForClient ?? null, status, cancellationRequestId);
   }
+
+  // ==================== Req 38-39: Deadline & Overdue helpers ====================
 
   /** Req 42,45: Admin reviews a cancellation request */
   async reviewCancellationRequest(
@@ -2015,8 +2159,6 @@ export class OrdersService {
     return { ok: true };
   }
 
-  // ==================== Req 36: Assignment History ====================
-
   /**
    * Зберігає копію актуальної версії чек-листа послуги у OrderServiceChecklist
    * та встановлює посилання на замовленні. Редагування master чек-листа не
@@ -2039,7 +2181,7 @@ export class OrdersService {
         steps = sc.get('steps') as any[] ?? [];
       }
 
-      const snapshot = new this.back4app.parse.Query(this.orderServiceChecklistClassName);
+      // const snapshot = new this.back4app.parse.Query(this.orderServiceChecklistClassName);
       // Create new OrderServiceChecklist object
       const osc = new this.back4app.parse.Object(this.orderServiceChecklistClassName);
       osc.set(OrderServiceChecklistTable.Fields.OrderId, orderId);
@@ -2059,6 +2201,8 @@ export class OrdersService {
       console.error('Помилка створення сніпшоту чек-листа:', error);
     }
   }
+
+  // ==================== Req 36: Assignment History ====================
 
   /**
    * Клієнт підтверджує, що поховання знайдено правильно.
@@ -2125,45 +2269,6 @@ export class OrdersService {
       order.set(OrderTable.Fields.AdditionalServices, [...current, serviceName]);
       await order.save();
     }
-  }
-
-  // ==================== Req 41-47: Cancellation ====================
-
-  /**
-   * Отримує буфер зображення за ім'ям файлу (OriginalName), збереженим у таблиці ImageModel.
-   * Зображення зберігаються як Base64 рядок (data:image/jpeg;base64,...).
-   */
-  private async getImageBuffer(filePath: string): Promise<Buffer | null> {
-    this.logger.log(`[OrdersService] getImageBuffer`, { filePath });
-    if (!filePath) return null;
-    try {
-      const Parse = this.back4app.parse;
-      const query = new Parse.Query(ImageModelTable.TableName);
-      query.equalTo(ImageModelTable.Fields.OriginalName, filePath);
-      const result = await query.first(); //{ useMasterKey: true });
-      if (!result) {
-        console.error(`Зображення не знайдено в ImageModel: ${filePath}`);
-        return null;
-      }
-      const base64String = result.get(ImageModelTable.Fields.Base64Data) as string;
-      if (!base64String) {
-        console.error(`Base64 дані відсутні для: ${filePath}`);
-        return null;
-      }
-      const base64Data = base64String.split(',')[1] || base64String;
-      return Buffer.from(base64Data, 'base64');
-    } catch (e) {
-      console.error(`Не вдалося отримати зображення ${filePath}:`, e);
-      return null;
-    }
-  }
-
-  /**
-   * Публічний метод для отримання буфера зображення за шляхом/оригінальною назвою файлу.
-   * Використовується сценами телеграм-бота для відправки фото користувачеві.
-   */
-  public async getImageBufferByPath(filePath: string): Promise<Buffer | null> {
-    return this.getImageBuffer(filePath);
   }
 
   /**
@@ -2253,6 +2358,69 @@ export class OrdersService {
           console.error(`Не вдалося надіслати групу фото «після» адміну ${admin.telegramId}:`, e);
         }
       }
+    }
+  }
+
+  // ==================== Req 41-47: Cancellation ====================
+
+  /**
+   * Надсилає повідомлення всім активним адмінам з бази даних.
+   * Замість використання одного TELEGRAM_ADMIN_CHAT_ID з .env.
+   */
+  private async notifyAllAdmins(text: string, options?: any): Promise<void> {
+    const admins = await this.adminService.findAllActive();
+    if (admins.length === 0) {
+      this.logger.warn('[OrdersService] notifyAllAdmins: немає активних адмінів у базі');
+      return;
+    }
+    for (const admin of admins) {
+      if (!admin.telegramId) continue;
+      try {
+        await this.adminBot.telegram.sendMessage(admin.telegramId, text, {
+          parse_mode: 'HTML',
+          ...options,
+        });
+      } catch (error) {
+        console.error(`Не вдалося надіслати повідомлення адміну ${admin.telegramId}:`, error);
+      }
+    }
+  }
+
+  /**
+   * Публічний метод для отримання буфера зображення за шляхом/оригінальною назвою файлу.
+   * Використовується сценами телеграм-бота для відправки фото користувачеві.
+   */
+
+  /*public async getImageBufferByPath(filePath: string): Promise<Buffer | null> {
+    return this.getImageBuffer(filePath);
+  }*/
+
+  /**
+   * Отримує буфер зображення за ім'ям файлу (OriginalName), збереженим у таблиці ImageModel.
+   * Зображення зберігаються як Base64 рядок (data:image/jpeg;base64,...).
+   */
+  private async getImageBuffer(filePath: string): Promise<Buffer | null> {
+    this.logger.log(`[OrdersService] getImageBuffer`, { filePath });
+    if (!filePath) return null;
+    try {
+      const Parse = this.back4app.parse;
+      const query = new Parse.Query(ImageModelTable.TableName);
+      query.equalTo(ImageModelTable.Fields.OriginalName, filePath);
+      const result = await query.first(); //{ useMasterKey: true });
+      if (!result) {
+        console.error(`Зображення не знайдено в ImageModel: ${filePath}`);
+        return null;
+      }
+      const base64String = result.get(ImageModelTable.Fields.Base64Data) as string;
+      if (!base64String) {
+        console.error(`Base64 дані відсутні для: ${filePath}`);
+        return null;
+      }
+      const base64Data = base64String.split(',')[1] || base64String;
+      return Buffer.from(base64Data, 'base64');
+    } catch (e) {
+      console.error(`Не вдалося отримати зображення ${filePath}:`, e);
+      return null;
     }
   }
 
@@ -2560,7 +2728,7 @@ export class OrdersService {
   /**
    * Сповіщає клієнта про завантажені фото «до» та просить підтвердити поховання.
    */
-  private async notifyClientBeforePhotos(orderId: string, order: Parse.Object): Promise<void> {
+  /*private async notifyClientBeforePhotos(orderId: string, order: Parse.Object): Promise<void> {
     this.logger.log(`[OrdersService] notifyClientBeforePhotos`, { orderId });
     const clientTelegramId = order.get(OrderTable.Fields.TelegramId) as string | null;
     if (!clientTelegramId) return;
@@ -2637,7 +2805,7 @@ export class OrdersService {
     } catch (error) {
       console.error(`Не вдалося надіслати сповіщення клієнту ${clientTelegramId}:`, error);
     }
-  }
+  }*/
 
   private mapOrderFields(order: Parse.Object) {
     // this.logger.log(`[OrdersService] mapOrderFields`, { orderId: order.id });
@@ -2657,7 +2825,7 @@ export class OrdersService {
 
     const status = order.get(OrderTable.Fields.Status) as OrderStatus;
     const executionDeadline = order.get(OrderTable.Fields.ExecutionDeadline) as Date | null;
-    const mapped = {
+    return {
       id: order.id,
       status,
       createdAt: order.createdAt,
@@ -2747,6 +2915,5 @@ export class OrdersService {
         remaining: this.formatDeadlineRemaining(executionDeadline),
       },
     };
-    return mapped;
   }
 }

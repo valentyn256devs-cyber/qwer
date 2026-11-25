@@ -5,6 +5,7 @@ import { AdminService } from "./admin.service";
 import { Context, Markup } from "telegraf";
 import { OrderStepUa } from "../telegram-constants";
 import { OrderStatus, UnassignReason } from "../../orders/models/order-status";
+import { ExecutorConst } from "../../telegram-bot/executor/model/executor-const";
 
 @Update()
 export class TelegramAdminListener {
@@ -468,6 +469,123 @@ export class TelegramAdminListener {
     }
   }
 
+  // ==================== Not Found flow: Admin actions ====================
+
+  // Admin clicks "Уточнить в клиента"
+  @Action(/^admin_notfound_clarify_client_(.+)$/)
+  async handleAdminClarifyClient(@Ctx() ctx: any) {
+    this.logger.log(`[TelegramAdminListener] handleAdminClarifyClient`, { data: ctx.callbackQuery?.data });
+    if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
+    const orderId = ctx.callbackQuery.data.replace('admin_notfound_clarify_client_', '');
+
+    try {
+      const adminId = ctx.from?.id.toString() ?? '';
+      ctx.session = ctx.session || {};
+      ctx.session.adminClarifyingClientOrderId = orderId;
+      ctx.session.adminClarifyingClientAdminId = adminId;
+
+      // Отримуємо замовлення, щоб знати clientTelegramId
+      const order = await this.ordersService.findById(orderId);
+      if (!order) {
+        await ctx.answerCbQuery('Замовлення не знайдено.');
+        return;
+      }
+
+      const clientTelegramId = order.client?.telegramId;
+      if (!clientTelegramId) {
+        await ctx.answerCbQuery('У замовлення немає телеграм-ID клієнта.');
+        return;
+      }
+
+      // Реєструємо сесію уточнення: коли клієнт відповість, повідомлення піде цьому адміну
+      this.ordersService.registerClientClarificationSession(clientTelegramId, adminId, orderId);
+
+      // Надсилаємо клієнту запит на уточнення
+      await this.ordersService.sendClarificationToClient(clientTelegramId, orderId);
+
+      await ctx.answerCbQuery('Запит на уточнення надіслано клієнту.');
+      await ctx.reply(
+        ExecutorConst.AdminClarificationSentToClient(orderId),
+        { parse_mode: 'HTML' },
+      );
+    } catch (error) {
+      console.error(error);
+      await ctx.answerCbQuery('Помилка надсилання запиту клієнту.');
+    }
+  }
+
+  // Admin clicks "Написать сообщение"
+  @Action(/^admin_write_message_(.+)$/)
+  async handleAdminWriteMessage(@Ctx() ctx: any) {
+    this.logger.log(`[TelegramAdminListener] handleAdminWriteMessage`, { data: ctx.callbackQuery?.data });
+    if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
+    const orderId = ctx.callbackQuery.data.replace('admin_write_message_', '');
+
+    try {
+      ctx.session = ctx.session || {};
+      ctx.session.adminWritingMessageOrderId = orderId;
+      ctx.session.adminWritingMessageAdminId = ctx.from?.id?.toString() ?? '';
+
+      await ctx.reply(
+        `✍️ <b>Напишіть повідомлення виконавцю для замовлення №${orderId}</b>\n\nВведіть текст повідомлення:`,
+        { parse_mode: 'HTML' },
+      );
+      await ctx.answerCbQuery('Очікую на ваш текст...');
+    } catch (error) {
+      console.error(error);
+      await ctx.answerCbQuery('Помилка ініціації написання повідомлення.');
+    }
+  }
+
+  // Admin clicks "Переслать виконавцю" (forward client's message to executor)
+  @Action(/^admin_forward_to_executor_(.+)$/)
+  async handleAdminForwardToExecutor(@Ctx() ctx: any) {
+    this.logger.log(`[TelegramAdminListener] handleAdminForwardToExecutor`, { data: ctx.callbackQuery?.data });
+    if (!ctx.has('callback_query') || !('data' in ctx.callbackQuery)) return;
+    const orderId = ctx.callbackQuery.data.replace('admin_forward_to_executor_', '');
+
+    try {
+      const adminId = ctx.from?.id.toString() ?? '';
+      const order = await this.ordersService.findById(orderId);
+      if (!order) {
+        await ctx.answerCbQuery('Замовлення не знайдено.');
+        return;
+      }
+
+      const executorId = order.assignment?.executorId;
+      if (!executorId) {
+        await ctx.answerCbQuery('Для замовлення не призначено виконавця.');
+        return;
+      }
+
+      // Отримуємо telegramId виконавця
+      const executorTelegramId = await this.ordersService.getExecutorTelegramId(executorId) ?? executorId;
+
+      // Отримуємо повідомлення клієнта для адміна
+      const clientMessageData = this.ordersService.popClientMessageForAdmin(adminId);
+      if (!clientMessageData) {
+        await ctx.answerCbQuery('Повідомлення клієнта не знайдено.');
+        return;
+      }
+
+      await this.ordersService.sendMessageToExecutorWithButtons(
+        executorTelegramId,
+        orderId,
+        'Клієнт (через адміністратора)',
+        clientMessageData.messageText,
+      );
+
+      await ctx.answerCbQuery('Повідомлення переслано виконавцю.');
+      await ctx.reply(
+        ExecutorConst.AdminForwardedToExecutor(orderId),
+        { parse_mode: 'HTML' },
+      );
+    } catch (error) {
+      console.error(error);
+      await ctx.answerCbQuery('Помилка пересилання повідомлення виконавцю.');
+    }
+  }
+
   // 16. Capture admin's clarification comment for before photos / revision / executor
   @On('message')
   async handleAdminClarificationComment(@Ctx() ctx: any) {
@@ -515,6 +633,59 @@ export class TelegramAdminListener {
       } catch (error) {
         console.error(error);
         await ctx.reply('Помилка повернення на доопрацювання.');
+      }
+      return;
+    }
+
+    // Admin is writing a message to executor (from "Написать сообщение" flow)
+    const writingOrderId = (ctx.session as any)?.adminWritingMessageOrderId;
+    if (writingOrderId) {
+      const adminId = ctx.from?.id?.toString() ?? '';
+      const messageText = ctx.message?.text?.trim();
+      if (!messageText) return;
+
+      try {
+        const order = await this.ordersService.findById(writingOrderId);
+        if (!order) {
+          await ctx.reply('Замовлення не знайдено.');
+          (ctx.session as any).adminWritingMessageOrderId = null;
+          return;
+        }
+
+        const executorId = order.assignment?.executorId;
+        if (!executorId) {
+          await ctx.reply('Для замовлення не призначено виконавця.');
+          (ctx.session as any).adminWritingMessageOrderId = null;
+          return;
+        }
+
+        // Отримуємо telegramId виконавця
+        const executorTelegramId = await this.ordersService.getExecutorTelegramId(executorId) ?? executorId;
+
+        // Отримуємо ім'я адміна
+        const admin = await this.adminService.findByTelegramId(adminId);
+        const senderName = admin?.firstName || admin?.lastName
+          ? `${admin?.lastName ?? ''} ${admin?.firstName ?? ''}`.trim()
+          : 'Адміністратор';
+
+        await this.ordersService.sendMessageToExecutorWithButtons(
+          executorTelegramId,
+          writingOrderId,
+          senderName,
+          messageText,
+        );
+
+        // Clear session state
+        (ctx.session as any).adminWritingMessageOrderId = null;
+        (ctx.session as any).adminWritingMessageAdminId = null;
+
+        await ctx.reply(
+          ExecutorConst.AdminMessageSentToExecutor(writingOrderId),
+          { parse_mode: 'HTML' },
+        );
+      } catch (error) {
+        console.error(error);
+        await ctx.reply('Помилка надсилання повідомлення виконавцю.');
       }
       return;
     }

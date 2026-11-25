@@ -15,6 +15,7 @@ import {
 import {BurialsService} from "../../burials/burials.service";
 import {ServiceResponseDto} from "../../services/dto/service-response.dto";
 import {Message} from "telegraf/types";
+import {ExecutorConst} from "../executor/model/executor-const";
 
 @Update()
 export class TelegramClientListener {
@@ -499,6 +500,40 @@ export class TelegramClientListener {
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore (Безпечний ігнор динамічного тексту повідомлення для Telegraf)
     const text = ctx.message?.text as string;
+
+    const clientTelegramId = ctx.from?.id?.toString() ?? '';
+
+    // Перевіряємо, чи очікуємо на уточнення від клієнта (адмін натиснув "Уточнить в клиента")
+    const clarificationSession = this.ordersService['popClientClarificationSession'](clientTelegramId);
+    if (clarificationSession) {
+      const { adminChatId, orderId } = clarificationSession;
+
+      // Повідомляємо клієнта, що його повідомлення надіслано адміну
+      await ctx.reply(
+        ExecutorConst.ClientClarificationReceived,
+        { parse_mode: 'HTML' },
+      );
+
+      // Зберігаємо повідомлення клієнта для адміна (щоб адмін міг переслати виконавцю)
+      this.ordersService.storeClientMessageForAdmin(adminChatId, orderId, text, clientTelegramId);
+
+      // Надсилаємо повідомлення клієнта адміну з кнопкою "Переслать виконавцю"
+      try {
+        await ctx.telegram.sendMessage(adminChatId, `📨 <b>Повідомлення від клієнта (замовлення №${orderId})</b>\n\n💬 ${text}`, {
+          parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: ExecutorConst.AdminForwardToExecutorButton, callback_data: `admin_forward_to_executor_${orderId}` },
+              ],
+            ],
+          },
+        });
+      } catch (error) {
+        console.error(`Не вдалося надіслати повідомлення клієнта адміну ${adminChatId}:`, error);
+      }
+      return;
+    }
 
     // Тут можна реалізувати текстову аналітику, роботу з кроками створення заявки (State Machine),
     // або автоматичну відповідь менеджера, якщо це не команда.

@@ -7,6 +7,7 @@ import { Scene as SceneConst } from '../../telegram-constants';
 import { ExecutorConst } from '../model/executor-const';
 import { requireExecutorOrder } from '../model/executor-scene-helpers';
 import type { ExecutorWizardContext } from '../interfaces/executor-wizard-context.interface';
+import { PerformersService } from '../../../performers/performers.service';
 
 interface VerificationItem {
   label: string;
@@ -16,9 +17,11 @@ interface VerificationItem {
 @Wizard(SceneConst.SEARCH_VERIFY_SCENE)
 export class SearchVerifyScene {
   private readonly logger = new Logger(SearchVerifyScene.name);
+
   constructor(
     private readonly ordersService: OrdersService,
     private readonly burialsService: BurialsService,
+    private readonly performersService: PerformersService,
   ) {
   }
 
@@ -42,8 +45,6 @@ export class SearchVerifyScene {
       `  • Орієнтири: ${burial?.notes ?? '—'}\n` +
       `  • Фото: ${burial?.photos?.length ? 'є' : 'немає'}`;
 
-    // Initialize wizard state for sub-steps
-    ctx.wizard.state = ctx.wizard.state || {};
     (ctx.wizard.state as any).searchStep = 1;
 
     await ctx.reply(
@@ -65,7 +66,6 @@ export class SearchVerifyScene {
   async onArrived(@Ctx() ctx: ExecutorWizardContext) {
     this.logger.log(`[SearchVerifyScene] onArrived`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     await ctx.answerCbQuery?.();
-    ctx.wizard.state = ctx.wizard.state || {};
     (ctx.wizard.state as any).searchStep = 2;
     await this.renderSearchStep(ctx, 2);
   }
@@ -75,7 +75,6 @@ export class SearchVerifyScene {
   async onFound(@Ctx() ctx: ExecutorWizardContext) {
     this.logger.log(`[SearchVerifyScene] onFound`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     await ctx.answerCbQuery?.();
-    ctx.wizard.state = ctx.wizard.state || {};
     (ctx.wizard.state as any).searchStep = 3;
     await this.renderSearchStep(ctx, 3);
   }
@@ -104,6 +103,64 @@ export class SearchVerifyScene {
         ]).reply_markup,
       },
     );
+  }
+
+  /** Step 2: Поховання не знайдено → сповіщаємо адміна з кнопками дії. */
+  @Action('executor_not_found')
+  async onNotFound(@Ctx() ctx: ExecutorWizardContext) {
+    this.logger.log(`[SearchVerifyScene] onNotFound`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
+    await ctx.answerCbQuery?.();
+
+    const order = await requireExecutorOrder(ctx, this.ordersService);
+    if (!order) return;
+
+    // Отримуємо дані виконавця
+    let performer: any;
+    try {
+      performer = await this.performersService.findByTelegramId(ctx.from?.id?.toString() ?? '');
+    } catch {
+      performer = null;
+    }
+    const executorName =
+      performer?.firstName || performer?.lastName
+        ? `${performer?.lastName ?? ''} ${performer?.firstName ?? ''}`.trim()
+        : '';
+    const executorPhone = performer?.phoneNumber ?? '';
+
+    await this.ordersService.sendNotFoundToAdmins(
+      order.id,
+      executorName,
+      executorPhone,
+      ctx.from?.id?.toString() ?? '',
+    );
+
+    await ctx.reply(
+      `✅ Повідомлення про те, що місце поховання не знайдено, надіслано адміністратору.`,
+      { parse_mode: 'HTML' },
+    );
+  }
+
+  // ==================== Обробка повідомлень від адміністраторів ====================
+  @Action(/^executor_msg_not_found_(.+)$/)
+  async onMsgNotFound(@Ctx() ctx: any) {
+    this.logger.log(`[TelegramExecutorListener] onMsgNotFound`, { userId: ctx.from?.id, orderId: ctx.match?.[1] });
+    const orderId = ctx.match?.[1] ?? '';
+    const executorId = ctx.from?.id?.toString() ?? '';
+    await ctx.answerCbQuery?.();
+    if (!orderId || !executorId) return;
+
+    await this.onNotFound(ctx);
+  }
+
+  @Action(/^executor_msg_found_(.+)$/)
+  async onMsgFound(@Ctx() ctx: any) {
+    this.logger.log(`[TelegramExecutorListener] onMsgFound`, { userId: ctx.from?.id, orderId: ctx.match?.[1] });
+    const orderId = ctx.match?.[1] ?? '';
+    const executorId = ctx.from?.id?.toString() ?? '';
+    await ctx.answerCbQuery?.();
+    if (!orderId || !executorId) return;
+
+    await this.onFound(ctx);
   }
 
   // ==================== Рендеринг кроків пошуку ====================

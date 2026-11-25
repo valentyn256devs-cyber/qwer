@@ -189,4 +189,32 @@ export const ExecutorConst = {
   NewOrderAlreadyTaken: '❌ <b>Замовлення вже підтверджено іншим виконавцем.</b>',
   // Сповіщення замовнику (клієнту) — лише текст, без додаткових даних
   ClientOrderTaken: (orderId: string) => `✅ Ваше замовлення (№${orderId}) прийнято виконавцем.`,
+
+  // ==================== Search Verify: Not Found flow ====================
+  NotFoundButton: 'Не знайдено',
+  FoundButton: 'Знайшов',
+  AdminClarifyClientButton: 'Уточнить в клиента',
+  AdminWriteMessageButton: 'Написать сообщение',
+  AdminForwardToExecutorButton: 'Переслать виконавцю',
+  NotFoundAdminTitle: (orderId: string, executorName: string, executorPhone: string) =>
+    `⚠️ <b>Виконавець не знайшов місце поховання</b>\n\n` +
+    `📋 Замовлення №${orderId}\n` +
+    `👤 Виконавець: ${executorName || '—'}\n` +
+    `📞 Телефон: ${executorPhone || '—'}\n\n` +
+    `Оберіть дію:`,
+  NotFoundClientTitle: (orderId: string) =>
+    `❓ <b>Уточнення по замовленню №${orderId}</b>\n\n` +
+    `Виконавець не змів знайти місце поховання. Будь ласка, надайте додаткову інформацію або уточнення щодо місця поховання.`,
+  NotFoundExecutorTitle: (orderId: string, senderName: string, messageText: string) =>
+    `📨 <b>Повідомлення щодо замовлення №${orderId}</b>\n\n` +
+    `Від: ${senderName || 'Адміністратор'}\n\n` +
+    `💬 ${messageText}\n\n` +
+    `Оберіть дію:`,
+  ClientClarificationReceived: '✅ Ваше повідомлення надіслано адміністратору.',
+  AdminClarificationSentToClient: (orderId: string) =>
+    `🟡 Запит на уточнення надіслано клієнту (замовлення №${orderId}). Очікуйте відповідь.`,
+  AdminMessageSentToExecutor: (orderId: string) =>
+    `✅ Повідомлення надіслано виконавцю (замовлення №${orderId}).`,
+  AdminForwardedToExecutor: (orderId: string) =>
+    `✅ Повідомлення переслано виконавцю (замовлення №${orderId}).`,
 };

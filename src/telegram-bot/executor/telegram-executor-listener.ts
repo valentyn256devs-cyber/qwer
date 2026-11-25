@@ -344,6 +344,43 @@ export class TelegramExecutorListener {
     return ctx.scene.enter(Scene.SERVICE_CHECKLIST_SCENE);
   }
 
+  // ==================== Executor responds to message from admin/client (Знайшов / Не знайдено) ====================
+
+  /*@Action(/^executor_msg_found_(.+)$/)
+  async onMsgFound(@Ctx() ctx: any) {
+    this.logger.log(`[TelegramExecutorListener] onMsgFound`, { userId: ctx.from?.id, orderId: ctx.match?.[1] });
+    const orderId = ctx.match?.[1] ?? '';
+    const executorId = ctx.from?.id?.toString() ?? '';
+    await ctx.answerCbQuery?.();
+    if (!orderId || !executorId) return;
+
+    ctx.session = ctx.session || {};
+    ctx.session.orderId = orderId;
+    // Позначка, що потрібно пропустити крок прибуття та перейти відразу до перевірки (крок 3)
+    ctx.wizard.state = ctx.wizard.state || {};
+    (ctx.wizard.state as any).skipToFound = true;
+
+    return ctx.scene.enter(Scene.SEARCH_VERIFY_SCENE);
+  }
+
+  @Action(/^executor_msg_not_found_(.+)$/)
+  async onMsgNotFound(@Ctx() ctx: any) {
+    this.logger.log(`[TelegramExecutorListener] onMsgNotFound`, { userId: ctx.from?.id, orderId: ctx.match?.[1] });
+    const orderId = ctx.match?.[1] ?? '';
+    const executorId = ctx.from?.id?.toString() ?? '';
+    await ctx.answerCbQuery?.();
+    if (!orderId || !executorId) return;
+
+    ctx.session = ctx.session || {};
+    ctx.session.orderId = orderId;
+
+    ctx.wizard.state = ctx.wizard.state || {};
+    (ctx.wizard.state as any).skipToNotFound = true;
+
+    // Повертаємося до початкового кроку пошуку — виконавець знову може натиснути "Не знайдено"
+    return ctx.scene.enter(Scene.SEARCH_VERIFY_SCENE);
+  }*/
+
   @On('text')
   async onTextForFlows(@Ctx() ctx: any) {
     this.logger.log(`[TelegramExecutorListener] onTextForFlows`, { userId: ctx.from?.id, text: ctx.message?.text?.trim() });
@@ -433,6 +470,7 @@ export class TelegramExecutorListener {
       });
     } catch (e: any) {
       await ctx.reply(`❌ ${e?.message ?? ExecutorConst.SendErrorMessage}`, {
+        parse_mode: 'HTML',
         reply_markup: executorMainMenuButtons,
       });
     }
