@@ -49,13 +49,23 @@ export class RedisSessionStore {
     this.redis = new Redis(redisUrl, {
       username,
       password,
-      lazyConnect: true,
-      maxRetriesPerRequest: 1,
-      enableOfflineQueue: false,
+      lazyConnect: false,
+      maxRetriesPerRequest: 3,
+      enableOfflineQueue: true,
+      connectTimeout: 10000,
+      retryStrategy: (times) => Math.min(times * 200, 5000),
+    });
+
+    this.redis.on('connect', () => {
+      console.log('[RedisSessionStore] Redis connected');
     });
 
     this.redis.on('error', (err) => {
-      console.warn(`[RedisSessionStore] Redis error: ${err.message}`);
+      console.error(`[RedisSessionStore] Redis error: ${err.message}`);
+    });
+
+    this.redis.on('close', () => {
+      console.warn('[RedisSessionStore] Redis connection closed');
     });
   }
 
@@ -64,7 +74,7 @@ export class RedisSessionStore {
       const raw = await this.redis.get(this.prefix + key);
       return raw ? JSON.parse(raw) : undefined;
     } catch (err) {
-      console.warn(`[RedisSessionStore] get failed: ${(err as Error).message}`);
+      console.error(`[RedisSessionStore] get failed: ${(err as Error).message}`);
       return undefined;
     }
   }
@@ -78,7 +88,7 @@ export class RedisSessionStore {
         await this.redis.set(this.prefix + key, payload);
       }
     } catch (err) {
-      console.warn(`[RedisSessionStore] set failed: ${(err as Error).message}`);
+      console.error(`[RedisSessionStore] set failed: ${(err as Error).message}`);
     }
   }
 
@@ -86,7 +96,7 @@ export class RedisSessionStore {
     try {
       await this.redis.del(this.prefix + key);
     } catch (err) {
-      console.warn(`[RedisSessionStore] delete failed: ${(err as Error).message}`);
+      console.error(`[RedisSessionStore] delete failed: ${(err as Error).message}`);
     }
   }
 }

@@ -77,6 +77,57 @@ export async function requireExecutorOrder(
 }
 
 /**
+ * Завантажує замовлення за ID без фільтрації за виконавцем.
+ * Використовується, коли виконавець ще не призначений на замовлення
+ * (executorId на замовленні — null).
+ *
+ * @param ctx           — контекст сцени (wizard + session).
+ * @param ordersService — сервіс для роботи із замовленнями.
+ * @returns `order` або `null`, якщо orderId відсутній або замовлення не знайдено.
+ */
+export async function loadOrderById(
+  ctx: ExecutorWizardContext,
+  ordersService: OrdersService,
+): Promise<any | null> {
+  const orderId = getOrderId(ctx);
+  if (!orderId) return null;
+
+  return ordersService.findById(orderId);
+}
+
+/**
+ * Завантажує замовлення за ID без фільтрації за виконавцем,
+ * або відповідає помилкою + залишає сцену.
+ *
+ * Використовується на початку сцени перегляду деталей замовлення,
+ * коли виконавець ще не призначений (executorId нулл).
+ *
+ * @param ctx           — контекст сцени (wizard + session).
+ * @param ordersService — сервіс для роботи із замовленнями.
+ * @returns `order` або `null` (якщо `null` — сцена вже залишена, викликач має return).
+ */
+export async function requireOrderById(
+  ctx: ExecutorWizardContext,
+  ordersService: OrdersService,
+): Promise<any | null> {
+  const orderId = getOrderId(ctx);
+  if (!orderId) {
+    await ctx.reply(ExecutorConst.OrderNotFound);
+    await ctx.scene.leave();
+    return null;
+  }
+
+  const order = await ordersService.findById(orderId);
+  if (!order) {
+    await ctx.reply(ExecutorConst.OrderNotFoundSimple);
+    await ctx.scene.leave();
+    return null;
+  }
+
+  return order;
+}
+
+/**
  * Завантажує фото з Telegram, зберігає на диск через `ImageStorageService`
  * та записує відносний шлях у БД через `OrdersService.addReportPhotoPath`.
  * Фото зберігається за вказаним slotKey у відповідному типі (before/after).

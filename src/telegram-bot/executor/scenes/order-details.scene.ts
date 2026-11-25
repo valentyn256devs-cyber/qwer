@@ -6,7 +6,7 @@ import { BurialsService } from '../../../burials/burials.service';
 import { OrderStatus } from '../../../orders/models/order-status';
 import { Scene as SceneConst } from '../../telegram-constants';
 import { ExecutorConst } from '../model/executor-const';
-import { requireExecutorOrder } from '../model/executor-scene-helpers';
+import { requireOrderById } from '../model/executor-scene-helpers';
 import type { ExecutorWizardContext } from '../interfaces/executor-wizard-context.interface';
 
 @Wizard(SceneConst.ORDER_DETAILS_SCENE)
@@ -20,7 +20,7 @@ export class OrderDetailsScene {
   @WizardStep(1)
   async stepDetails(@Ctx() ctx: ExecutorWizardContext) {
     this.logger.log(`[OrderDetailsScene] stepDetails`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
-    const order = await requireExecutorOrder(ctx, this.ordersService);
+    const order = await requireOrderById(ctx, this.ordersService);
     if (!order) return;
 
     const burial = order.details?.burialId
@@ -70,7 +70,7 @@ export class OrderDetailsScene {
   async onBackToOrders(@Ctx() ctx: ExecutorWizardContext) {
     this.logger.log(`[OrderDetailsScene] onBackToOrders`, { userId: ctx.from?.id });
     await ctx.answerCbQuery?.();
-    return ctx.scene.enter(SceneConst.MY_ORDERS_SCENE);
+    return ctx.scene.enter(SceneConst.OPEN_ORDERS_SCENE);
   }
 
   /** Почати виконання замовлення. */
