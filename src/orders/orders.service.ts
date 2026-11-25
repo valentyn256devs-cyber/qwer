@@ -24,6 +24,7 @@ import { Context, Telegraf } from 'telegraf';
 import { PerformersService } from '../performers/performers.service';
 import { BurialsService } from '../burials/burials.service';
 import { ImageModelTable } from '../images/models/image-model-table';
+import { AdminService } from '../telegram-bot/admin/admin.service';
 
 export interface ChecklistStep {
   id: string;
@@ -62,6 +63,15 @@ export class OrdersService {
     string,
     Array<{ telegramId: string; messageId: number }>
   >();
+  /**
+   * Tracking of admin order messages (with confirm/reject/etc. buttons).
+   * Key: orderId → list of { chatId, messageId } so we can remove buttons
+   * and update the text in every admin's chat once one admin acts on the order.
+   */
+  private readonly adminOrderMessages = new Map<
+    string,
+    Array<{ chatId: string | number; messageId: number }>
+  >();
   /** Statuses where client can directly cancel (req 42) */
   private readonly clientDirectCancelStatuses = new Set<OrderStatus>([
     OrderStatus.New,
@@ -87,7 +97,93 @@ export class OrdersService {
     private readonly executorBot: Telegraf<Context>,
     private readonly performersService: PerformersService,
     private readonly burialsService: BurialsService,
+    private readonly adminService: AdminService,
   ) {
+  }
+
+  /**
+   * Надсилає повідомлення всім активним адмінам з бази даних.
+   * Замість використання одного TELEGRAM_ADMIN_CHAT_ID з .env.
+   */
+  private async notifyAllAdmins(text: string, options?: any): Promise<void> {
+    const admins = await this.adminService.findAllActive();
+    if (admins.length === 0) {
+      this.logger.warn('[OrdersService] notifyAllAdmins: немає активних адмінів у базі');
+      return;
+    }
+    for (const admin of admins) {
+      if (!admin.telegramId) continue;
+      try {
+        await this.adminBot.telegram.sendMessage(admin.telegramId, text, {
+          parse_mode: 'HTML',
+          ...options,
+        });
+      } catch (error) {
+        console.error(`Не вдалося надіслати повідомлення адміну ${admin.telegramId}:`, error);
+      }
+    }
+  }
+
+  /**
+   * Реєструє повідомлення адміна про замовлення (з кнопками дії),
+   * щоб пізніше оновити/прибрати кнопки у всіх адмінів, коли один з них
+   * підтвердить/відхилить/уточнить замовлення.
+   */
+  registerAdminOrderMessage(
+    orderId: string,
+    chatId: string | number,
+    messageId: number,
+  ): void {
+    let messages = this.adminOrderMessages.get(orderId);
+    if (!messages) {
+      messages = [];
+      this.adminOrderMessages.set(orderId, messages);
+    }
+    messages.push({ chatId, messageId });
+  }
+
+  /**
+   * Прибирає кнопки дії та оновлює текст у повідомлень ВСІХ інших адмінів
+   * для цього замовлення (крім того, хто виконав дію), щоб у всіх відображалося
+   * однаково і кнопки більше не можна було натиснути повторно.
+   */
+  async notifyAdminsOrderResolved(
+    orderId: string,
+    actedByChatId: string | number,
+    text: string,
+  ): Promise<void> {
+    const messages = this.adminOrderMessages.get(orderId);
+    if (!messages || messages.length === 0) return;
+
+    const actedBy = String(actedByChatId);
+    for (const { chatId, messageId } of messages) {
+      if (String(chatId) === actedBy) continue;
+      try {
+        // Прибираємо кнопки (працює і для тексту, і для фото)
+        await this.adminBot.telegram.editMessageReplyMarkup(chatId, messageId, undefined, {
+          inline_keyboard: [],
+        });
+        // Оновлюємо текст/підпис, щоб відображався поточний стан
+        try {
+          await this.adminBot.telegram.editMessageText(chatId, messageId, undefined, text, {
+            parse_mode: 'HTML',
+          });
+        } catch {
+          // Якщо це повідомлення з фото — редагуємо підпис
+          try {
+            await this.adminBot.telegram.editMessageCaption(chatId, messageId, undefined, text, {
+              parse_mode: 'HTML',
+            });
+          } catch {
+            // ігноруємо — повідомлення вже видалене/нередаговане
+          }
+        }
+      } catch {
+        // ігноруємо — повідомлення видалене або бот не має прав
+      }
+    }
+
+    this.adminOrderMessages.delete(orderId);
   }
 
   async create(createOrderDto: CreateOrderDto) {
@@ -434,6 +530,22 @@ export class OrdersService {
    */
   async confirmAndNotify(orderId: string, clientId: string) {
     this.logger.log(`[OrdersService] confirmAndNotify`, { orderId, clientId });
+
+    // Ідемпотентність: якщо замовлення вже підтверджено/оброблено іншим адміном,
+    // не надсилаємо повторні сповіщення клієнту та виконавцям.
+    const existing = await this.findById(orderId);
+    if (!existing) {
+      throw new NotFoundException(`Заявку з ID ${orderId} не знайдено`);
+    }
+    const currentStatus = existing.status as OrderStatus;
+    if (currentStatus !== OrderStatus.New && currentStatus !== OrderStatus.AwaitingAdminReview) {
+      this.logger.log(
+        `[OrdersService] confirmAndNotify: замовлення №${orderId} вже має статус ${currentStatus}, пропускаємо повторне підтвердження`,
+        {},
+      );
+      return existing;
+    }
+
     const updatedOrder = await this.updateStatus(orderId, OrderStatus.Confirmed);
 
     await this.clientBot.telegram.sendMessage(
@@ -489,8 +601,6 @@ export class OrdersService {
    */
   async notifyAdminAboutExecutorConfirm(orderId: string, executorTelegramId: string) {
     this.logger.log(`[OrdersService] notifyAdminAboutExecutorConfirm`, { orderId, executorTelegramId });
-    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
-    if (!adminChatId) return;
 
     let performer: any;
     try {
@@ -510,13 +620,8 @@ export class OrdersService {
       `👤 <b>Виконавець:</b> ${this.escapeHtml(fullName) || '—'}\n` +
       `📞 <b>Телефон:</b> ${this.escapeHtml(phone) || '—'}`;
 
-    try {
-      await this.adminBot.telegram.sendMessage(adminChatId, text, { parse_mode: 'HTML' });
-    } catch (error) {
-      console.error('Не вдалося надіслати повідомлення адміністратору:', error);
-    }
+    await this.notifyAllAdmins(text);
   }
-
   // ==================== Хелпери для форматування сповіщень ====================
 
   /**
@@ -528,8 +633,6 @@ export class OrdersService {
     executorTelegramId: string,
   ): Promise<void> {
     this.logger.log(`[OrdersService] notifyAdminExecutorAssigned`, { orderId, executorTelegramId });
-    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
-    if (!adminChatId) return;
 
     const order = await this.findById(orderId);
     if (!order) return;
@@ -574,11 +677,7 @@ export class OrdersService {
       },
     };
 
-    try {
-      await this.adminBot.telegram.sendMessage(adminChatId, text, options as any);
-    } catch (error) {
-      console.error('Не вдалося надіслати сповіщення адміністратору:', error);
-    }
+    await this.notifyAllAdmins(text, options);
   }
 
   /**
@@ -694,24 +793,25 @@ export class OrdersService {
     await order.save();
 
     // Notify admin about executor's response
-    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
-    if (adminChatId) {
-      const text =
-        `🔄 <b>Відповідь виконавця на уточнення (замовлення №${orderId})</b>\n\n` +
-        `💬 Коментар: ${comment || '—'}\n` +
-        `📸 Фото: ${photoFileIds?.length ?? 0} шт.`;
-      try {
-        await this.adminBot.telegram.sendMessage(adminChatId, text, { parse_mode: 'HTML' });
-        for (const fileId of photoFileIds ?? []) {
+    const text =
+      `🔄 <b>Відповідь виконавця на уточнення (замовлення №${orderId})</b>\n\n` +
+      `💬 Коментар: ${comment || '—'}\n` +
+      `📸 Фото: ${photoFileIds?.length ?? 0} шт.`;
+    try {
+      await this.notifyAllAdmins(text, { parse_mode: 'HTML' });
+      for (const fileId of photoFileIds ?? []) {
+        const admins = await this.adminService.findAllActive();
+        for (const admin of admins) {
+          if (!admin.telegramId) continue;
           try {
-            await this.adminBot.telegram.sendPhoto(adminChatId, fileId);
+            await this.adminBot.telegram.sendPhoto(admin.telegramId, fileId);
           } catch {
             // ignore
           }
         }
-      } catch (error) {
-        console.error('Не вдалося надіслати відповідь адміністратору:', error);
       }
+    } catch (error) {
+      console.error('Не вдалося надіслати відповідь адміністратору:', error);
     }
   }
 
@@ -724,8 +824,6 @@ export class OrdersService {
     executorTelegramId: string,
   ): Promise<void> {
     this.logger.log(`[OrdersService] notifyAdminBeforePhotos`, { orderId, executorTelegramId });
-    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
-    if (!adminChatId) return;
 
     const order = await this.findById(orderId);
     if (!order) return;
@@ -791,14 +889,18 @@ export class OrdersService {
       }
     }
 
-    // Telegram дозволяє до 10 медіа в одному повідомленні (media group)
+    // Надсилаємо фото кожному адміну з бази
+    const admins = await this.adminService.findAllActive();
     const CHUNK_SIZE = 10;
-    for (let i = 0; i < mediaGroup.length; i += CHUNK_SIZE) {
-      const chunk = mediaGroup.slice(i, i + CHUNK_SIZE);
-      try {
-        await this.adminBot.telegram.sendMediaGroup(adminChatId, chunk);
-      } catch (e) {
-        console.error('Не вдалося надіслати групу фото адміну:', e);
+    for (const admin of admins) {
+      if (!admin.telegramId) continue;
+      for (let i = 0; i < mediaGroup.length; i += CHUNK_SIZE) {
+        const chunk = mediaGroup.slice(i, i + CHUNK_SIZE);
+        try {
+          await this.adminBot.telegram.sendMediaGroup(admin.telegramId, chunk);
+        } catch (e) {
+          console.error(`Не вдалося надіслати групу фото адміну ${admin.telegramId}:`, e);
+        }
       }
     }
 
@@ -826,11 +928,7 @@ export class OrdersService {
       },
     };
 
-    try {
-      await this.adminBot.telegram.sendMessage(adminChatId, text, options as any);
-    } catch (error) {
-      console.error('Не вдалося надіслати сповіщення адміністратору про фото «до»:', error);
-    }
+    await this.notifyAllAdmins(text, options);
   }
 
   /**
@@ -969,134 +1067,130 @@ export class OrdersService {
     });
 
     // Notify admin about completion review — send before photos, then after photos, then final message
-    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
-    if (adminChatId) {
-      const orderReport = order.get('report') as any;
-      /*const photosBeforeBySlot: Record<string, string[]> =
-        ((orderReport?.photosBeforeBySlot as any) ?? {});
-      const photosAfterBySlot: Record<string, string[]> =
-        ((orderReport?.photosAfterBySlot as any) ?? {});*/
+    const orderReport = order.get('report') as any;
+    /*const photosBeforeBySlot: Record<string, string[]> =
+      ((orderReport?.photosBeforeBySlot as any) ?? {});
+    const photosAfterBySlot: Record<string, string[]> =
+      ((orderReport?.photosAfterBySlot as any) ?? {});*/
 
-      /*const slotOrder = ['front', 'left', 'right', 'monument'];
-      const slotNames: Record<string, string> = {
-        front: 'Загальний вигляд спереду',
-        left: 'Вигляд зліва',
-        right: 'Вигляд справа',
-        monument: 'Памʼятник крупним планом',
-      };*/
+    /*const slotOrder = ['front', 'left', 'right', 'monument'];
+    const slotNames: Record<string, string> = {
+      front: 'Загальний вигляд спереду',
+      left: 'Вигляд зліва',
+      right: 'Вигляд справа',
+      monument: 'Памʼятник крупним планом',
+    };*/
 
-      // 1) Спочатку надсилаємо фото «ДО»
-      /*for (const slotKey of slotOrder) {
-        const photos = photosBeforeBySlot[slotKey] ?? [];
-        for (const filePath of photos) {
-          try {
-            const buffer = await this.getImageBuffer(filePath);
-            if (!buffer) continue;
-            await this.adminBot.telegram.sendPhoto(adminChatId, { source: buffer }, {
-              caption: `📸 «До»: ${slotNames[slotKey] ?? slotKey}`,
-            });
-          } catch (e) {
-            console.error(`Не вдалося надіслати фото ${filePath} адміну:`, e);
-          }
+    // 1) Спочатку надсилаємо фото «ДО»
+    /*for (const slotKey of slotOrder) {
+      const photos = photosBeforeBySlot[slotKey] ?? [];
+      for (const filePath of photos) {
+        try {
+          const buffer = await this.getImageBuffer(filePath);
+          if (!buffer) continue;
+          await this.adminBot.telegram.sendPhoto(adminChatId, { source: buffer }, {
+            caption: `📸 «До»: ${slotNames[slotKey] ?? slotKey}`,
+          });
+        } catch (e) {
+          console.error(`Не вдалося надіслати фото ${filePath} адміну:`, e);
         }
-      }*/
-
-      // 2) Потім надсилаємо фото «ПІСЛЯ»
-      /*for (const slotKey of slotOrder) {
-        const photos = photosAfterBySlot[slotKey] ?? [];
-        for (const filePath of photos) {
-          try {
-            const buffer = await this.getImageBuffer(filePath);
-            if (!buffer) continue;
-            await this.adminBot.telegram.sendPhoto(adminChatId, { source: buffer }, {
-              caption: `📸 «Після»: ${slotNames[slotKey] ?? slotKey}`,
-            });
-          } catch (e) {
-            console.error(`Не вдалося надіслати фото ${filePath} адміну:`, e);
-          }
-        }
-      }*/
-
-      // Збираємо додаткові дані про замовлення для фінального повідомлення
-      const clientName = order.get(OrderTable.Fields.ClientName) as string | undefined;
-      const clientTelegramId = order.get(OrderTable.Fields.TelegramId) as string | undefined;
-      const serviceObj = order.get(OrderTable.Fields.Service) as Parse.Object | undefined;
-      const serviceName = serviceObj?.get('name') as string | undefined;
-      const checklist = order.get(OrderTable.Fields.Checklist) as
-        | { steps: Array<{ title: string; required: boolean }> }
-        | undefined;
-      const executorComment = order.get(OrderTable.Fields.ExecutorComment) as string | undefined;
-      const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
-      // const totalBeforePhotos = Object.values(photosBeforeBySlot).flat().length;
-
-      // Отримуємо історію уточнень для замовлення
-      let clarificationHistory = 'немає';
-      try {
-        const clarificationQuery = new this.back4app.parse.Query(ClarificationRequestTable.TableName);
-        clarificationQuery.equalTo(ClarificationRequestTable.Fields.OrderId, orderId);
-        const clarifications = await clarificationQuery.find();
-        if (clarifications.length > 0) {
-          clarificationHistory = clarifications
-            .map((c) => {
-              const q = c.get(ClarificationRequestTable.Fields.Question) as string;
-              const a = c.get(ClarificationRequestTable.Fields.Answer) as string | undefined;
-              const s = c.get(ClarificationRequestTable.Fields.Status) as string;
-              return `• ${q}${a ? ` → відповідь: ${a}` : ''} (${s})`;
-            })
-            .join('\n');
-        }
-      } catch {
-        clarificationHistory = 'помилка завантаження';
       }
+    }*/
 
-      // Отримуємо історію оновлень «Місця пам'яті» для замовлення
-      let memoryPlaceHistory = 'немає';
-      try {
-        const mpQuery = new this.back4app.parse.Query(MemoryPlaceUpdateRequestTable.TableName);
-        mpQuery.equalTo(MemoryPlaceUpdateRequestTable.Fields.OrderId, orderId);
-        const mpRequests = await mpQuery.find();
-        if (mpRequests.length > 0) {
-          memoryPlaceHistory = mpRequests
-            .map((r) => {
-              const s = r.get(MemoryPlaceUpdateRequestTable.Fields.Status) as string;
-              return `• статус: ${s}`;
-            })
-            .join('\n');
+    // 2) Потім надсилаємо фото «ПІСЛЯ»
+    /*for (const slotKey of slotOrder) {
+      const photos = photosAfterBySlot[slotKey] ?? [];
+      for (const filePath of photos) {
+        try {
+          const buffer = await this.getImageBuffer(filePath);
+          if (!buffer) continue;
+          await this.adminBot.telegram.sendPhoto(adminChatId, { source: buffer }, {
+            caption: `📸 «Після»: ${slotNames[slotKey] ?? slotKey}`,
+          });
+        } catch (e) {
+          console.error(`Не вдалося надіслати фото ${filePath} адміну:`, e);
         }
-      } catch {
-        memoryPlaceHistory = 'помилка завантаження';
       }
+    }*/
 
-      // const totalPhotos = Object.values(photosAfterBySlot).flat().length;
-      const text =
-        `🔍 <b>Робота на перевірку (замовлення №${orderId})</b>\n\n` +
-        `👤 Клієнт: ${clientName || '—'} (<code>${clientTelegramId || '—'}</code>)\n` +
-        `👷 Виконавець: <code>${executorId}</code>\n` +
-        `🛠 Послуга: ${serviceName || '—'}\n` +
-        `📋 Статус: ${currentStatus}\n` +
-        `💬 Коментар виконавця: ${executorComment || '—'}\n` +
-        `💬 Коментар при відправці: ${comment || '—'}\n` +
-        // `📸 Фото «до»: ${totalBeforePhotos} шт.\n` +
-        // `📸 Фото «після»: ${totalPhotos} шт.\n` +
-        `📝 Чек-лист: ${checklist?.steps?.length ?? 0} кроків\n\n` +
-        `❓ Уточнення:\n${clarificationHistory}\n\n` +
-        `🏛 Оновлення «Місця пам'яті»:\n${memoryPlaceHistory}\n\n` +
-        `Перегляньте фото «до»/«після» та чек-лист, потім підтвердьте або поверніть на доопрацювання.`;
-      try {
-        await this.adminBot.telegram.sendMessage(adminChatId, text, {
-          parse_mode: 'HTML',
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: '✅ Підтвердити виконання', callback_data: `admin_confirm_completion_${orderId}` },
-                { text: '🔄 Повернути на доопрацювання', callback_data: `admin_request_revision_${orderId}` },
-              ],
+    // Збираємо додаткові дані про замовлення для фінального повідомлення
+    const clientName = order.get(OrderTable.Fields.ClientName) as string | undefined;
+    const clientTelegramId = order.get(OrderTable.Fields.TelegramId) as string | undefined;
+    const serviceObj = order.get(OrderTable.Fields.Service) as Parse.Object | undefined;
+    const serviceName = serviceObj?.get('name') as string | undefined;
+    const checklist = order.get(OrderTable.Fields.Checklist) as
+      | { steps: Array<{ title: string; required: boolean }> }
+      | undefined;
+    const executorComment = order.get(OrderTable.Fields.ExecutorComment) as string | undefined;
+    // const totalBeforePhotos = Object.values(photosBeforeBySlot).flat().length;
+
+    // Отримуємо історію уточнень для замовлення
+    let clarificationHistory = 'немає';
+    try {
+      const clarificationQuery = new this.back4app.parse.Query(ClarificationRequestTable.TableName);
+      clarificationQuery.equalTo(ClarificationRequestTable.Fields.OrderId, orderId);
+      const clarifications = await clarificationQuery.find();
+      if (clarifications.length > 0) {
+        clarificationHistory = clarifications
+          .map((c) => {
+            const q = c.get(ClarificationRequestTable.Fields.Question) as string;
+            const a = c.get(ClarificationRequestTable.Fields.Answer) as string | undefined;
+            const s = c.get(ClarificationRequestTable.Fields.Status) as string;
+            return `• ${q}${a ? ` → відповідь: ${a}` : ''} (${s})`;
+          })
+          .join('\n');
+      }
+    } catch {
+      clarificationHistory = 'помилка завантаження';
+    }
+
+    // Отримуємо історію оновлень «Місця пам'яті» для замовлення
+    let memoryPlaceHistory = 'немає';
+    try {
+      const mpQuery = new this.back4app.parse.Query(MemoryPlaceUpdateRequestTable.TableName);
+      mpQuery.equalTo(MemoryPlaceUpdateRequestTable.Fields.OrderId, orderId);
+      const mpRequests = await mpQuery.find();
+      if (mpRequests.length > 0) {
+        memoryPlaceHistory = mpRequests
+          .map((r) => {
+            const s = r.get(MemoryPlaceUpdateRequestTable.Fields.Status) as string;
+            return `• статус: ${s}`;
+          })
+          .join('\n');
+      }
+    } catch {
+      memoryPlaceHistory = 'помилка завантаження';
+    }
+
+    // const totalPhotos = Object.values(photosAfterBySlot).flat().length;
+    const text =
+      `🔍 <b>Робота на перевірку (замовлення №${orderId})</b>\n\n` +
+      `👤 Клієнт: ${clientName || '—'} (<code>${clientTelegramId || '—'}</code>)\n` +
+      `👷 Виконавець: <code>${executorId}</code>\n` +
+      `🛠 Послуга: ${serviceName || '—'}\n` +
+      `📋 Статус: ${currentStatus}\n` +
+      `💬 Коментар виконавця: ${executorComment || '—'}\n` +
+      `💬 Коментар при відправці: ${comment || '—'}\n` +
+      // `📸 Фото «до»: ${totalBeforePhotos} шт.\n` +
+      // `📸 Фото «після»: ${totalPhotos} шт.\n` +
+      `📝 Чек-лист: ${checklist?.steps?.length ?? 0} кроків\n\n` +
+      `❓ Уточнення:\n${clarificationHistory}\n\n` +
+      `🏛 Оновлення «Місця пам'яті»:\n${memoryPlaceHistory}\n\n` +
+      `Перегляньте фото «до»/«після» та чек-лист, потім підтвердьте або поверніть на доопрацювання.`;
+    try {
+      await this.notifyAllAdmins(text, {
+        parse_mode: 'HTML',
+        reply_markup: {
+          inline_keyboard: [
+            [
+              { text: '✅ Підтвердити виконання', callback_data: `admin_confirm_completion_${orderId}` },
+              { text: '🔄 Повернути на доопрацювання', callback_data: `admin_request_revision_${orderId}` },
             ],
-          },
-        });
-      } catch (error) {
-        console.error('Не вдалося надіслати сповіщення адміністратору про перевірку:', error);
-      }
+          ],
+        },
+      });
+    } catch (error) {
+      console.error('Не вдалося надіслати сповіщення адміністратору про перевірку:', error);
     }
   }
 
@@ -1186,6 +1280,21 @@ export class OrdersService {
    */
   async rejectAndNotify(orderId: string, clientId: string) {
     this.logger.log(`[OrdersService] rejectAndNotify`, { orderId, clientId });
+
+    // Ідемпотентність: якщо замовлення вже відхилено іншим адміном,
+    // не надсилаємо повторне сповіщення клієнту.
+    const existing = await this.findById(orderId);
+    if (!existing) {
+      throw new NotFoundException(`Заявку з ID ${orderId} не знайдено`);
+    }
+    if (existing.status === OrderStatus.Rejected) {
+      this.logger.log(
+        `[OrdersService] rejectAndNotify: замовлення №${orderId} вже має статус ${OrderStatus.Rejected}, пропускаємо повторне відхилення`,
+        {},
+      );
+      return existing;
+    }
+
     const updatedOrder = await this.updateStatus(orderId, OrderStatus.Rejected);
 
     await this.clientBot.telegram.sendMessage(
@@ -1203,6 +1312,21 @@ export class OrdersService {
    */
   async clarifyAndNotify(orderId: string, clientId: string) {
     this.logger.log(`[OrdersService] clarifyAndNotify`, { orderId, clientId });
+
+    // Ідемпотентність: якщо замовлення вже знаходиться у стані уточнення,
+    // не надсилаємо повторне сповіщення клієнту.
+    const existing = await this.findById(orderId);
+    if (!existing) {
+      throw new NotFoundException(`Заявку з ID ${orderId} не знайдено`);
+    }
+    if (existing.status === OrderStatus.PendingClarification) {
+      this.logger.log(
+        `[OrdersService] clarifyAndNotify: замовлення №${orderId} вже має статус ${OrderStatus.PendingClarification}, пропускаємо повторне уточнення`,
+        {},
+      );
+      return existing;
+    }
+
     const updatedOrder = await this.updateStatus(orderId, OrderStatus.PendingClarification);
 
     await this.clientBot.telegram.sendMessage(
@@ -1866,26 +1990,27 @@ export class OrdersService {
       console.error('Failed to save problem report record:', e);
     }
 
-    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
-    if (adminChatId) {
-      const text =
-        `🆘 <b>Проблема по замовленню №${params.orderId}</b>\n\n` +
-        `Виконавець: <code>${params.executorId}</code>\n` +
-        `Причина: <b>${params.reason}</b>\n` +
-        `Коментар: ${params.comment ?? '—'}\n` +
-        `Статус замовлення: <b>${order.status}</b> (не змінено)`;
-      try {
-        await this.adminBot.telegram.sendMessage(adminChatId, text, { parse_mode: 'HTML' });
-        for (const fileId of params.photoFileIds ?? []) {
+    const text =
+      `🆘 <b>Проблема по замовленню №${params.orderId}</b>\n\n` +
+      `Виконавець: <code>${params.executorId}</code>\n` +
+      `Причина: <b>${params.reason}</b>\n` +
+      `Коментар: ${params.comment ?? '—'}\n` +
+      `Статус замовлення: <b>${order.status}</b> (не змінено)`;
+    try {
+      await this.notifyAllAdmins(text, { parse_mode: 'HTML' });
+      for (const fileId of params.photoFileIds ?? []) {
+        const admins = await this.adminService.findAllActive();
+        for (const admin of admins) {
+          if (!admin.telegramId) continue;
           try {
-            await this.adminBot.telegram.sendPhoto(adminChatId, fileId);
+            await this.adminBot.telegram.sendPhoto(admin.telegramId, fileId);
           } catch (e) {
-            console.error('Failed to forward problem photo:', e);
+            console.error(`Failed to forward problem photo to admin ${admin.telegramId}:`, e);
           }
         }
-      } catch (e) {
-        console.error('Failed to notify admin about problem:', e);
       }
+    } catch (e) {
+      console.error('Failed to notify admin about problem:', e);
     }
     return { ok: true };
   }
@@ -2048,8 +2173,6 @@ export class OrdersService {
    */
   public async sendPhotosToAdmin(orderId: string): Promise<void> {
     this.logger.log(`[OrdersService] sendPhotosToAdmin`, { orderId });
-    const adminChatId = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
-    if (!adminChatId) return;
 
     const order = await this.findById(orderId);
     if (!order) return;
@@ -2087,12 +2210,18 @@ export class OrdersService {
       }
     }
     const CHUNK_SIZE = 10;
-    for (let i = 0; i < beforeMedia.length; i += CHUNK_SIZE) {
-      const chunk = beforeMedia.slice(i, i + CHUNK_SIZE);
-      try {
-        await this.adminBot.telegram.sendMediaGroup(adminChatId, chunk);
-      } catch (e) {
-        console.error('Не вдалося надіслати групу фото «до» адміну:', e);
+
+    // Надсилаємо фото кожному адміну з бази
+    const admins = await this.adminService.findAllActive();
+    for (const admin of admins) {
+      if (!admin.telegramId) continue;
+      for (let i = 0; i < beforeMedia.length; i += CHUNK_SIZE) {
+        const chunk = beforeMedia.slice(i, i + CHUNK_SIZE);
+        try {
+          await this.adminBot.telegram.sendMediaGroup(admin.telegramId, chunk);
+        } catch (e) {
+          console.error(`Не вдалося надіслати групу фото «до» адміну ${admin.telegramId}:`, e);
+        }
       }
     }
 
@@ -2114,12 +2243,15 @@ export class OrdersService {
         }
       }
     }
-    for (let i = 0; i < afterMedia.length; i += CHUNK_SIZE) {
-      const chunk = afterMedia.slice(i, i + CHUNK_SIZE);
-      try {
-        await this.adminBot.telegram.sendMediaGroup(adminChatId, chunk);
-      } catch (e) {
-        console.error('Не вдалося надіслати групу фото «після» адміну:', e);
+    for (const admin of admins) {
+      if (!admin.telegramId) continue;
+      for (let i = 0; i < afterMedia.length; i += CHUNK_SIZE) {
+        const chunk = afterMedia.slice(i, i + CHUNK_SIZE);
+        try {
+          await this.adminBot.telegram.sendMediaGroup(admin.telegramId, chunk);
+        } catch (e) {
+          console.error(`Не вдалося надіслати групу фото «після» адміну ${admin.telegramId}:`, e);
+        }
       }
     }
   }
@@ -2264,7 +2396,7 @@ export class OrdersService {
 
   /** Екранує HTML-спецсимволи, щоб динамічний контент не ламав розмітку Telegram */
   private escapeHtml(value?: string | null): string {
-    this.logger.log(`[OrdersService] escapeHtml`, { value });
+    // this.logger.log(`[OrdersService] escapeHtml`, { value });
     if (value == null) return '';
     return String(value)
       .replace(/&/g, '&')

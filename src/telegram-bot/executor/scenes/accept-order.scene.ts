@@ -29,6 +29,7 @@ export class AcceptOrderScene {
         ExecutorConst.AcceptSuccess(order.id, order.service?.name ?? '—'),
         { parse_mode: 'HTML' },
       );
+      await this.ordersService.notifyAdminAboutExecutorConfirm(orderId, executorId);
     } catch (error: any) {
       const message = (error as Error).message ?? '';
       if (message.includes('вже прийняте') || message.includes('уже взято')) {

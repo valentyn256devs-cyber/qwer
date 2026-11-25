@@ -70,7 +70,7 @@ export class BurialsService {
    * Отримання одного поховання за objectId
    */
   async findOne(id: string) {
-    this.logger.log(`[BurialsService] findOne`, { id });
+    // this.logger.log(`[BurialsService] findOne`, { id });
     try {
       const query = new this.back4app.parse.Query(this.className);
       const result = await query.get(id);
@@ -121,7 +121,7 @@ export class BurialsService {
    * Мапінг з Parse.Object у стандартний об'єкт
    */
   private mapFields(obj: Parse.Object) {
-    this.logger.log(`[BurialsService] mapFields`, { id: obj.id });
+    // this.logger.log(`[BurialsService] mapFields`, { id: obj.id });
     const photosArray = obj.get(BurialTable.Fields.Photos) as Parse.File[] | undefined;
     const urls = photosArray ? photosArray.map(file => file.url()) : [];
 

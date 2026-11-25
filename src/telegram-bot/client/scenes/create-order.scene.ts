@@ -16,6 +16,7 @@ import {
 } from "../../telegram-constants";
 import {BurialsService} from "../../../burials/burials.service";
 import {ServiceResponseDto} from "../../../services/dto/service-response.dto";
+import {AdminService} from "../../../telegram-bot/admin/admin.service";
 
 @Wizard(Scene.CREATE_ORDER_WIZARD)
 export class CreateOrderScene {
@@ -26,6 +27,7 @@ export class CreateOrderScene {
     private readonly burialsService: BurialsService,
     @InjectBot(TelegramBot.AdminBot)
     private readonly adminBot: Telegraf<Context>,
+    private readonly adminService: AdminService,
   ) {
   }
 
@@ -719,7 +721,6 @@ export class CreateOrderScene {
 
   private async sendOrderToAdmin(orderId: string, state: OrderForm, telegramId: string) {
     this.logger.log(`[CreateOrderScene] sendOrderToAdmin`, { orderId, telegramId });
-    const ADMIN_BOT_CHAT_ID = process.env.TELEGRAM_ADMIN_CHAT_ID || '';
     const burialData = await this.burialsService.findBurialById(state.burialId);
 
     // Форматер для відображення дат анкети
@@ -781,21 +782,39 @@ export class CreateOrderScene {
     ]).reply_markup;
 
     try {
-      // 3. Надсилаємо адміну (з фото, якщо воно є, або просто текстом)
-      if (state.clientPhotos && state.clientPhotos.length > 0) {
-        // Беремо перше фото з масиву для головної картки з кнопками
-        const mainPhoto = state.clientPhotos[0];
-
-        await this.adminBot.telegram.sendPhoto(ADMIN_BOT_CHAT_ID, mainPhoto, {
-          caption: adminSummary,
-          parse_mode: 'HTML',
-          reply_markup: adminButtons,
-        });
-      } else {
-        await this.adminBot.telegram.sendMessage(ADMIN_BOT_CHAT_ID, adminSummary, {
-          parse_mode: 'HTML',
-          reply_markup: adminButtons,
-        });
+      // 3. Надсилаємо всім адмінам з бази (з фото, якщо воно є, або просто текстом)
+      const admins = await this.adminService.findAllActive();
+      if (admins.length === 0) {
+        this.logger.warn('[CreateOrderScene] sendOrderToAdmin: немає активних адмінів у базі');
+      }
+      for (const admin of admins) {
+        if (!admin.telegramId) continue;
+        try {
+          let sentMessage: any;
+          if (state.clientPhotos && state.clientPhotos.length > 0) {
+            const mainPhoto = state.clientPhotos[0];
+            sentMessage = await this.adminBot.telegram.sendPhoto(admin.telegramId, mainPhoto, {
+              caption: adminSummary,
+              parse_mode: 'HTML',
+              reply_markup: adminButtons,
+            });
+          } else {
+            sentMessage = await this.adminBot.telegram.sendMessage(admin.telegramId, adminSummary, {
+              parse_mode: 'HTML',
+              reply_markup: adminButtons,
+            });
+          }
+          // Реєструємо повідомлення, щоб при дії одного адміна прибрати кнопки у всіх інших
+          if (sentMessage?.message_id) {
+            this.ordersService.registerAdminOrderMessage(
+              orderId,
+              admin.telegramId,
+              sentMessage.message_id,
+            );
+          }
+        } catch (e) {
+          console.error(`Не вдалося надіслати замовлення адміну ${admin.telegramId}:`, e);
+        }
       }
       console.log(OrderStepUa.SuccessSavedOrder);
     } catch (error) {

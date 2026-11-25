@@ -12,10 +12,12 @@ import type { ExecutorWizardContext } from '../interfaces/executor-wizard-contex
 @Wizard(SceneConst.ORDER_DETAILS_SCENE)
 export class OrderDetailsScene {
   private readonly logger = new Logger(OrderDetailsScene.name);
+
   constructor(
     private readonly ordersService: OrdersService,
     private readonly burialsService: BurialsService,
-  ) {}
+  ) {
+  }
 
   @WizardStep(1)
   async stepDetails(@Ctx() ctx: ExecutorWizardContext) {
@@ -56,13 +58,13 @@ export class OrderDetailsScene {
       await ctx.reply(ExecutorConst.ChooseAction, {
         reply_markup: Markup.inlineKeyboard(actions).reply_markup,
       });
+    } else {
+      await ctx.reply(ExecutorConst.BackToDetails, {
+        reply_markup: Markup.inlineKeyboard([
+          [Markup.button.callback(ExecutorConst.BackToOrders, 'executor_back_to_orders')],
+        ]).reply_markup,
+      });
     }
-
-    await ctx.reply(ExecutorConst.BackToDetails, {
-      reply_markup: Markup.inlineKeyboard([
-        [Markup.button.callback(ExecutorConst.BackToOrders, 'executor_back_to_orders')],
-      ]).reply_markup,
-    });
   }
 
   /** Назад до списку «Мої замовлення». */
@@ -76,7 +78,10 @@ export class OrderDetailsScene {
   /** Почати виконання замовлення. */
   @Action(/^executor_start_(.+)$/)
   async onStartExecution(@Ctx() ctx: ExecutorWizardContext) {
-    this.logger.log(`[OrderDetailsScene] onStartExecution`, { userId: ctx.from?.id, orderId: ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '' });
+    this.logger.log(`[OrderDetailsScene] onStartExecution`, {
+      userId: ctx.from?.id,
+      orderId: ((ctx as any).match as RegExpExecArray | null)?.[1] ?? ''
+    });
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await ctx.answerCbQuery?.();
     if (!orderId) return;
@@ -91,6 +96,23 @@ export class OrderDetailsScene {
       return;
     }
   }
+
+  /** Взяти замовлення → сцена прийняття. */
+  @Action(/^executor_accept_preview_order_(.+)$/)
+  async onAcceptOrder(@Ctx() ctx: ExecutorWizardContext) {
+    this.logger.log(`[OrderDetailsScene] onAcceptPreviewOrder`, {
+      userId: ctx.from?.id,
+      orderId: ((ctx as any).match as RegExpExecArray | null)?.[1] ?? ''
+    });
+    const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
+    await ctx.answerCbQuery?.();
+    if (!orderId) return;
+
+    ctx.session = ctx.session || {};
+    ctx.session.orderId = orderId;
+    return ctx.scene.enter(SceneConst.ACCEPT_ORDER_SCENE);
+  }
+
 }
 
 function buildActions(order: any, orderId: string): any[][] {
@@ -98,6 +120,11 @@ function buildActions(order: any, orderId: string): any[][] {
   const beforePhotosResponse = order.BeforePhotosConfirmationResponse;
 
   switch (status) {
+    case OrderStatus.AvailableForExecutor:
+      return [
+        [Markup.button.callback(ExecutorConst.TakeButton, `executor_accept_preview_order_${orderId}`)],
+        [Markup.button.callback(ExecutorConst.BackToOrders, 'executor_back_to_orders')],
+      ];
     case OrderStatus.Assigned:
       // If admin requested clarification on before photos, executor must respond first
       if (beforePhotosResponse === 'clarification') {

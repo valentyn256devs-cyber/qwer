@@ -1,22 +1,38 @@
-import {Action, Ctx, On, Start, Update} from "nestjs-telegraf";
-import {Logger} from "@nestjs/common";
-import {OrdersService} from "../../orders/orders.service";
-import {Context, Markup} from "telegraf";
-import {OrderStepUa} from "../telegram-constants";
+import { Action, Ctx, On, Start, Update } from "nestjs-telegraf";
+import { Logger } from "@nestjs/common";
+import { OrdersService } from "../../orders/orders.service";
+import { AdminService } from "./admin.service";
+import { Context, Markup } from "telegraf";
+import { OrderStepUa } from "../telegram-constants";
 import { OrderStatus, UnassignReason } from "../../orders/models/order-status";
 
 @Update()
 export class TelegramAdminListener {
   private readonly logger = new Logger(TelegramAdminListener.name);
+
   constructor(
     private readonly ordersService: OrdersService,
-  ) {}
+    private readonly adminService: AdminService,
+  ) {
+  }
+
   /**
    * 👑 Обробка команди /start для Адмін-бота
    */
   @Start()
   async onStart(@Ctx() ctx: Context) {
     this.logger.log(`[TelegramAdminListener] onStart`, { userId: ctx.from?.id });
+
+    const telegramId = ctx.from?.id?.toString() ?? '';
+    if (telegramId) {
+      await this.adminService.upsertAdmin({
+        telegramId,
+        username: ctx.from?.username ?? null,
+        firstName: ctx.from?.first_name ?? null,
+        lastName: ctx.from?.last_name ?? null,
+      });
+    }
+
     await ctx.reply(
       OrderStepUa.AdminWelcome + OrderStepUa.AdminWelcomeDescription,
       { parse_mode: 'HTML' }
@@ -37,6 +53,11 @@ export class TelegramAdminListener {
       await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
       const message = ctx.callbackQuery.message;
       const text = `✅ <b>Виконавця підтверджено для замовлення №${orderId}</b>\n\nВиконавець може приступати до виконання робіт.`;
+
+      // Оновлюємо повідомлення у всіх інших адмінах (прибираємо кнопки)
+      if (ctx.from?.id) {
+        await this.ordersService.notifyAdminsOrderResolved(orderId, ctx.from.id, text).catch(() => null);
+      }
 
       if (message && 'photo' in message && message.photo) {
         await ctx.editMessageCaption(text, { parse_mode: 'HTML' });
@@ -85,6 +106,11 @@ export class TelegramAdminListener {
       await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
       const message = ctx.callbackQuery.message;
       const text = `✅ <b>Фото «до» підтверджено для замовлення №${orderId}</b>\n\nВиконавець може приступати до виконання робіт.`;
+
+      // Оновлюємо повідомлення у всіх інших адмінах (прибираємо кнопки)
+      if (ctx.from?.id) {
+        await this.ordersService.notifyAdminsOrderResolved(orderId, ctx.from.id, text).catch(() => null);
+      }
 
       if (message && 'photo' in message && message.photo) {
         await ctx.editMessageCaption(text, { parse_mode: 'HTML' });
@@ -135,6 +161,11 @@ export class TelegramAdminListener {
       await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
       const message = ctx.callbackQuery.message;
       const text = `✅ <b>Виконання підтверджено для замовлення №${orderId}</b>\n\nЗамовлення завершено. Звіт надіслано клієнту.`;
+
+      // Оновлюємо повідомлення у всіх інших адмінах (прибираємо кнопки)
+      if (ctx.from?.id) {
+        await this.ordersService.notifyAdminsOrderResolved(orderId, ctx.from.id, text).catch(() => null);
+      }
 
       if (message && 'photo' in message && message.photo) {
         await ctx.editMessageCaption(text, { parse_mode: 'HTML' });
@@ -195,6 +226,11 @@ export class TelegramAdminListener {
         await ctx.reply(text, { parse_mode: 'HTML' })
       }
 
+      // Оновлюємо повідомлення у всіх інших адмінах (прибираємо кнопки)
+      if (ctx.from?.id) {
+        await this.ordersService.notifyAdminsOrderResolved(orderId, ctx.from.id, text).catch(() => null);
+      }
+
       // Оновлюємо статус замовлення
       await this.ordersService.updateStatus(orderId, OrderStatus.AvailableForExecutor);
     } catch (error) {
@@ -218,6 +254,11 @@ export class TelegramAdminListener {
 
       const message = ctx.callbackQuery.message;
       const text = `🔴 <b>Заявку №${orderId} ВІДХИЛЕНО</b>`;
+
+      // Оновлюємо повідомлення у всіх інших адмінах (прибираємо кнопки)
+      if (ctx.from?.id) {
+        await this.ordersService.notifyAdminsOrderResolved(orderId, ctx.from.id, text).catch(() => null);
+      }
 
       // 🔥 ФІКС: Перевіряємо наявність фото
       if (message && 'photo' in message && message.photo) {
@@ -244,6 +285,11 @@ export class TelegramAdminListener {
 
       const message = ctx.callbackQuery.message;
       const text = `🟡 <b>Надіслано запит на УТОЧНЕННЯ до заявки №${orderId}</b>`;
+
+      // Оновлюємо повідомлення у всіх інших адмінах (прибираємо кнопки)
+      if (ctx.from?.id) {
+        await this.ordersService.notifyAdminsOrderResolved(orderId, ctx.from.id, text).catch(() => null);
+      }
 
       // 🔥 ФІКС: Перевіряємо наявність фото
       if (message && 'photo' in message && message.photo) {
@@ -272,6 +318,11 @@ export class TelegramAdminListener {
       const message = ctx.callbackQuery.message;
       const text = `🔄 <b>Заявку №${orderId} НАДІСЛАНО НА РЕВІЗІЮ</b>`;
 
+      // Оновлюємо повідомлення у всіх інших адмінах (прибираємо кнопки)
+      if (ctx.from?.id) {
+        await this.ordersService.notifyAdminsOrderResolved(orderId, ctx.from.id, text).catch(() => null);
+      }
+
       if (message && 'photo' in message && message.photo) {
         await ctx.editMessageCaption(text, { parse_mode: 'HTML' });
       } else {
@@ -299,6 +350,11 @@ export class TelegramAdminListener {
       await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
       const message = ctx.callbackQuery.message;
       const text = `✅ <b>Заявку №${orderId} СХВАЛЕНО</b>`;
+
+      // Оновлюємо повідомлення у всіх інших адмінах (прибираємо кнопки)
+      if (ctx.from?.id) {
+        await this.ordersService.notifyAdminsOrderResolved(orderId, ctx.from.id, text).catch(() => null);
+      }
 
       if (message && 'photo' in message && message.photo) {
         await ctx.editMessageCaption(text, { parse_mode: 'HTML' });
@@ -350,6 +406,11 @@ export class TelegramAdminListener {
       const message = ctx.callbackQuery.message;
       const text = `➖ <b>Виконавця скасовано для заявки №${orderId}</b>\nПричина: ${reason}`;
 
+      // Оновлюємо повідомлення у всіх інших адмінах (прибираємо кнопки)
+      if (ctx.from?.id) {
+        await this.ordersService.notifyAdminsOrderResolved(orderId, ctx.from.id, text).catch(() => null);
+      }
+
       if (message && 'photo' in message && message.photo) {
         await ctx.editMessageCaption(text, { parse_mode: 'HTML' });
       } else {
@@ -390,6 +451,11 @@ export class TelegramAdminListener {
       await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
       const message = ctx.callbackQuery.message;
       const text = `👑 <b>Ви взяли замовлення №${orderId} на себе як виконавець</b>`;
+
+      // Оновлюємо повідомлення у всіх інших адмінах (прибираємо кнопки)
+      if (ctx.from?.id) {
+        await this.ordersService.notifyAdminsOrderResolved(orderId, ctx.from.id, text).catch(() => null);
+      }
 
       if (message && 'photo' in message && message.photo) {
         await ctx.editMessageCaption(text, { parse_mode: 'HTML' });

@@ -1,9 +1,12 @@
-import {Module} from "@nestjs/common";
-import {OrdersModule} from "../../orders/orders.module";
-import {TelegramAdminListener} from "./telegram-admin-listener";
+import { Module, forwardRef } from "@nestjs/common";
+import { OrdersModule } from "../../orders/orders.module";
+import { TelegramAdminListener } from "./telegram-admin-listener";
+import { AdminService } from "./admin.service";
 
 @Module({
-  imports: [OrdersModule],
-  providers: [TelegramAdminListener],
+  exports: [AdminService],
+  imports: [forwardRef(() => OrdersModule)],
+  providers: [TelegramAdminListener, AdminService],
 })
-export class TelegramAdminModule {}
+export class TelegramAdminModule {
+}
