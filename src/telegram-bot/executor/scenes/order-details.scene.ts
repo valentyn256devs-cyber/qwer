@@ -25,6 +25,9 @@ export class OrderDetailsScene {
     const order = await requireOrderById(ctx, this.ordersService);
     if (!order) return;
 
+    ctx.session = ctx.session || {};
+    ctx.session.orderDetailsMessageIds = [];
+
     const burial = order.details?.burialId
       ? await this.burialsService.findBurialById(order.details.burialId).catch(() => undefined)
       : undefined;
@@ -51,19 +54,28 @@ export class OrderDetailsScene {
       `  • Фото: ${burial?.photos?.length ? 'є' : 'немає'}\n\n` +
       `📝 Коментар клієнта: ${order.report?.adminComment ?? '—'}`;
 
-    await ctx.reply(msg, { parse_mode: 'HTML' });
+    const detailsMsg = await ctx.reply(msg, { parse_mode: 'HTML' });
+    if (detailsMsg?.message_id) {
+      ctx.session.orderDetailsMessageIds.push(detailsMsg.message_id);
+    }
 
     const actions = buildActions(order as any, order.id);
     if (actions.length > 0) {
-      await ctx.reply(ExecutorConst.ChooseAction, {
+      const actionsMsg = await ctx.reply(ExecutorConst.ChooseAction, {
         reply_markup: Markup.inlineKeyboard(actions).reply_markup,
       });
+      if (actionsMsg?.message_id) {
+        ctx.session.orderDetailsMessageIds.push(actionsMsg.message_id);
+      }
     } else {
-      await ctx.reply(ExecutorConst.BackToDetails, {
+      const backMsg = await ctx.reply(ExecutorConst.BackToDetails, {
         reply_markup: Markup.inlineKeyboard([
           [Markup.button.callback(ExecutorConst.BackToOrders, 'executor_back_to_orders')],
         ]).reply_markup,
       });
+      if (backMsg?.message_id) {
+        ctx.session.orderDetailsMessageIds.push(backMsg.message_id);
+      }
     }
   }
 
@@ -72,6 +84,7 @@ export class OrderDetailsScene {
   async onBackToOrders(@Ctx() ctx: ExecutorWizardContext) {
     this.logger.log(`[OrderDetailsScene] onBackToOrders`, { userId: ctx.from?.id });
     await ctx.answerCbQuery?.();
+    await this.clearOrderDetailsMessages(ctx);
     return ctx.scene.enter(SceneConst.OPEN_ORDERS_SCENE);
   }
 
@@ -85,6 +98,8 @@ export class OrderDetailsScene {
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     await ctx.answerCbQuery?.();
     if (!orderId) return;
+
+    await this.clearOrderDetailsMessages(ctx);
 
     const executorId = ctx.from?.id.toString() ?? '';
     try {
@@ -108,9 +123,23 @@ export class OrderDetailsScene {
     await ctx.answerCbQuery?.();
     if (!orderId) return;
 
+    await this.clearOrderDetailsMessages(ctx);
+
     ctx.session = ctx.session || {};
     ctx.session.orderId = orderId;
     return ctx.scene.enter(SceneConst.ACCEPT_ORDER_SCENE);
+  }
+
+  /** Прибирає всі повідомлення деталей замовлення з чату. */
+  private async clearOrderDetailsMessages(ctx: ExecutorWizardContext): Promise<void> {
+    const messageIds = ctx.session?.orderDetailsMessageIds ?? [];
+    const chatId = ctx.chat?.id ?? ctx.from?.id;
+    if (chatId && messageIds.length > 0) {
+      for (const messageId of messageIds) {
+        await ctx.telegram.deleteMessage(chatId, messageId).catch(() => null);
+      }
+      ctx.session.orderDetailsMessageIds = [];
+    }
   }
 
 }

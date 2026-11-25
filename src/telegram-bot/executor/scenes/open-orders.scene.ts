@@ -14,7 +14,14 @@ export class OpenOrdersScene {
   @WizardStep(1)
   async stepOpenOrders(@Ctx() ctx: ExecutorWizardContext) {
     this.logger.log(`[OpenOrdersScene] stepOpenOrders`, { userId: ctx.from?.id });
-    await ctx.reply(ExecutorConst.OpenOrdersLoading);
+
+    ctx.session = ctx.session || {};
+    ctx.session.openOrdersMessageIds = [];
+
+    const loadingMsg = await ctx.reply(ExecutorConst.OpenOrdersLoading);
+    if (loadingMsg?.message_id) {
+      ctx.session.openOrdersMessageIds.push(loadingMsg.message_id);
+    }
 
     try {
       const orders = await this.ordersService.findAvailable();
@@ -41,7 +48,7 @@ export class OpenOrdersScene {
 
         const finalText = msg + '\n\n' +  ExecutorConst.OpenOrdersFooter;
 
-        await ctx.reply(finalText, {
+        const sent = await ctx.reply(finalText, {
           parse_mode: 'HTML',
           reply_markup: Markup.inlineKeyboard([
             [
@@ -53,6 +60,9 @@ export class OpenOrdersScene {
             ],
           ]).reply_markup,
         });
+        if (sent?.message_id) {
+          ctx.session.openOrdersMessageIds.push(sent.message_id);
+        }
       }
 
       /*await ctx.reply(ExecutorConst.OpenOrdersFooter, {
@@ -75,6 +85,8 @@ export class OpenOrdersScene {
     await ctx.answerCbQuery?.();
     if (!orderId) return;
 
+    await this.clearOpenOrdersList(ctx);
+
     ctx.session = ctx.session || {};
     ctx.session.orderId = orderId;
     return ctx.scene.enter(SceneConst.ORDER_DETAILS_SCENE);
@@ -88,9 +100,23 @@ export class OpenOrdersScene {
     await ctx.answerCbQuery?.();
     if (!orderId) return;
 
+    await this.clearOpenOrdersList(ctx);
+
     ctx.session = ctx.session || {};
     ctx.session.orderId = orderId;
     return ctx.scene.enter(SceneConst.ACCEPT_ORDER_SCENE);
+  }
+
+  /** Прибирає всі повідомлення списку заказів з чату. */
+  private async clearOpenOrdersList(ctx: ExecutorWizardContext): Promise<void> {
+    const messageIds = ctx.session?.openOrdersMessageIds ?? [];
+    const chatId = ctx.chat?.id ?? ctx.from?.id;
+    if (chatId && messageIds.length > 0) {
+      for (const messageId of messageIds) {
+        await ctx.telegram.deleteMessage(chatId, messageId).catch(() => null);
+      }
+      ctx.session.openOrdersMessageIds = [];
+    }
   }
 
   /** Назад до меню. */
@@ -98,6 +124,9 @@ export class OpenOrdersScene {
   async onBackToMenu(@Ctx() ctx: ExecutorWizardContext) {
     this.logger.log(`[OpenOrdersScene] onBackToMenu`, { userId: ctx.from?.id });
     await ctx.answerCbQuery?.();
+
+    await this.clearOpenOrdersList(ctx);
+
     await ctx.reply(ExecutorConst.BackToMenuMessage, { parse_mode: 'HTML' });
     return ctx.scene.leave();
   }

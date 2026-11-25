@@ -136,6 +136,7 @@ export class SearchVerifyScene {
           parse_mode: 'HTML',
           reply_markup: Markup.inlineKeyboard([
             [Markup.button.callback('Знайдено', 'executor_found')],
+            [Markup.button.callback('Не знайдено', 'executor_not_found')],
             [Markup.button.callback(ExecutorConst.BackToDetails, 'executor_back_to_details')],
           ]).reply_markup,
         },
