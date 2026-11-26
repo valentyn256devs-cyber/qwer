@@ -1179,12 +1179,45 @@ export class OrdersService {
         await this.executorBot.telegram.sendMessage(
           executorId,
           `❓ Адміністратор запросив уточнення щодо фото «до» (замовлення №${orderId}).\n\nКоментар адміністратора: ${comment}\n\nБудь ласка, завантажте оновлені фото «до».`,
-          { parse_mode: 'HTML' },
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text: ExecutorConst.ReuploadBeforePhotosButton,
+                    callback_data: `executor_reupload_before_${orderId}`,
+                  },
+                ],
+              ],
+            },
+          },
         );
       } catch (error) {
         console.error('Не вдалося надіслати повідомлення виконавцю:', error);
       }
     }
+  }
+
+  /**
+   * Очищає всі фото «до» замовлення (плоский масив та перслотне відслідковування),
+   * а також скидає позначку підтвердження/уточнення фото «до».
+   *
+   * Використовується, коли адмін запросив уточнення і виконавець має
+   * завантажити фото «до» заново (перезаписати старі).
+   */
+  async clearBeforePhotos(orderId: string): Promise<void> {
+    this.logger.log(`[OrdersService] clearBeforePhotos`, { orderId });
+    const order = await this.getOrderObject(orderId);
+
+    order.set(OrderTable.Fields.ReportPhotosBefore, []);
+    order.set(OrderTable.Fields.ReportPhotosBeforeBySlot, {});
+    // Скидаємо стан підтвердження/уточнення, щоб флоу завантаження почався заново
+    order.set(OrderTable.Fields.BeforePhotosConfirmationResponse, '');
+    order.set(OrderTable.Fields.BeforePhotosConfirmedAt, null);
+    order.set(OrderTable.Fields.BeforePhotosConfirmedBy, null);
+
+    await order.save();
   }
 
   /**
@@ -1421,12 +1454,40 @@ export class OrdersService {
         await this.executorBot.telegram.sendMessage(
           executorId,
           `🔄 <b>Роботу повернено на доопрацювання (замовлення №${orderId})</b>\n\nКоментар адміністратора: ${description}\n\nВиправте зауваження та знову надішліть роботу на перевірку.`,
-          { parse_mode: 'HTML' },
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text: ExecutorConst.ReuploadAfterPhotosButton,
+                    callback_data: `executor_reupload_after_${orderId}`,
+                  },
+                ],
+              ],
+            },
+          },
         );
       } catch (error) {
         console.error('Не вдалося надіслати повідомлення виконавцю:', error);
       }
     }
+  }
+
+  /**
+   * Очищає всі фото «після» замовлення (плоский масив та перслотне відслідковування).
+   *
+   * Використовується, коли роботу повернено на доопрацювання і виконавець має
+   * завантажити фото «після» заново (перезаписати старі).
+   */
+  async clearAfterPhotos(orderId: string): Promise<void> {
+    this.logger.log(`[OrdersService] clearAfterPhotos`, { orderId });
+    const order = await this.getOrderObject(orderId);
+
+    order.set(OrderTable.Fields.ReportPhotosAfter, []);
+    order.set(OrderTable.Fields.ReportPhotosAfterBySlot, {});
+
+    await order.save();
   }
 
   /**

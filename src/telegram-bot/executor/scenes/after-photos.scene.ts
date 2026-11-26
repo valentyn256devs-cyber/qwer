@@ -306,6 +306,37 @@ export class AfterPhotosScene {
     return ctx.scene.enter(SceneConst.FINAL_SELFCHECK_SCENE);
   }
 
+  /**
+   * Обробка натискання кнопки «Завантажити фото «після»» з повідомлення
+   * адміністратора про повернення роботи на доопрацювання.
+   *
+   * Очищає старі фото «після» та запускає флоу завантаження заново
+   * (перезапис старого набору фото новими).
+   */
+  @Action(/^executor_reupload_after_(.+)$/)
+  async onReuploadAfter(@Ctx() ctx: ExecutorWizardContext) {
+    const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
+    this.logger.log(`[AfterPhotosScene] onReuploadAfter`, { userId: ctx.from?.id, orderId });
+    await ctx.answerCbQuery?.();
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
+    if (!orderId) return;
+
+    // Очищаємо старі фото «після», щоб виконавець завантажив нові
+    try {
+      await this.ordersService.clearAfterPhotos(orderId);
+    } catch (error) {
+      this.logger.error(`[AfterPhotosScene] onReuploadAfter failed to clear photos`, error as any);
+      await ctx.reply(ExecutorConst.PhotoSaveError);
+      return;
+    }
+
+    ctx.session = ctx.session || {};
+    ctx.session.orderId = orderId;
+    // Скидаємо індекс слота, щоб флоу почався з першого обовʼязкового слота
+    ctx.session.currentAfterSlotIndex = 0;
+    return ctx.scene.enter(SceneConst.AFTER_PHOTOS_SCENE);
+  }
+
   // ==================== Кнопки головного меню (щоб не «застрягти» в сцені) ====================
 
   @Hears(ExecutorMenu.OpenOrders)

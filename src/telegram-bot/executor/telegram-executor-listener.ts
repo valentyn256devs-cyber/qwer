@@ -344,6 +344,54 @@ export class TelegramExecutorListener {
     return ctx.scene.enter(Scene.SERVICE_CHECKLIST_SCENE);
   }
 
+  // ==================== Req: повторне завантаження фото «до» на запит адміна ====================
+
+  @Action(/^executor_reupload_before_(.+)$/)
+  async onReuploadBefore(@Ctx() ctx: any) {
+    this.logger.log(`[TelegramExecutorListener] onReuploadBefore`, { userId: ctx.from?.id, orderId: ctx.match?.[1] });
+    const orderId = ctx.match?.[1] ?? '';
+    await ctx.answerCbQuery?.();
+    await ctx.editMessageReplyMarkup?.({ inline_keyboard: [] }).catch?.(() => null);
+    if (!orderId) return;
+
+    // Очищаємо старі фото «до», щоб виконавець завантажив нові
+    try {
+      await this.ordersService.clearBeforePhotos(orderId);
+    } catch (e) {
+      this.logger.error(`[TelegramExecutorListener] onReuploadBefore failed to clear photos`, e as any);
+      await ctx.reply(ExecutorConst.PhotoSaveError);
+      return;
+    }
+
+    ctx.session = ctx.session || {};
+    ctx.session.orderId = orderId;
+    ctx.session.currentBeforeSlotIndex = 0;
+    return ctx.scene.enter(Scene.BEFORE_PHOTOS_SCENE);
+  }
+
+  @Action(/^executor_reupload_after_(.+)$/)
+  async onReuploadAfter(@Ctx() ctx: any) {
+    this.logger.log(`[TelegramExecutorListener] onReuploadAfter`, { userId: ctx.from?.id, orderId: ctx.match?.[1] });
+    const orderId = ctx.match?.[1] ?? '';
+    await ctx.answerCbQuery?.();
+    await ctx.editMessageReplyMarkup?.({ inline_keyboard: [] }).catch?.(() => null);
+    if (!orderId) return;
+
+    // Очищаємо старі фото «після», щоб виконавець завантажив нові
+    try {
+      await this.ordersService.clearAfterPhotos(orderId);
+    } catch (e) {
+      this.logger.error(`[TelegramExecutorListener] onReuploadAfter failed to clear photos`, e as any);
+      await ctx.reply(ExecutorConst.PhotoSaveError);
+      return;
+    }
+
+    ctx.session = ctx.session || {};
+    ctx.session.orderId = orderId;
+    ctx.session.currentAfterSlotIndex = 0;
+    return ctx.scene.enter(Scene.AFTER_PHOTOS_SCENE);
+  }
+
   // ==================== Executor responds to message from admin/client (Знайшов / Не знайдено) ====================
 
   /*@Action(/^executor_msg_found_(.+)$/)

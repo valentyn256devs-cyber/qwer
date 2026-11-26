@@ -146,6 +146,20 @@ export class TelegramAdminListener {
     const orderId = ctx.callbackQuery.data.replace('admin_clarify_before_photos_', '');
 
     try {
+      // Hide inline keyboard buttons after click
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
+
+      // Validate order exists and is in AwaitingClientConfirmation status
+      const order = await this.ordersService.findById(orderId);
+      if (!order) {
+        await ctx.answerCbQuery('Замовлення не знайдено.');
+        return;
+      }
+      if (order.status !== OrderStatus.AwaitingClientConfirmation) {
+        await ctx.answerCbQuery('Замовлення не в статусі AwaitingClientConfirmation. Уточнення неможливе.');
+        return;
+      }
+
       ctx.session = ctx.session || {};
       ctx.session.adminClarifyingBeforePhotosOrderId = orderId;
 
@@ -201,6 +215,9 @@ export class TelegramAdminListener {
     const orderId = ctx.callbackQuery.data.replace('admin_request_revision_', '');
 
     try {
+      // Hide inline keyboard buttons after click
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
+
       ctx.session = ctx.session || {};
       ctx.session.adminRequestingRevisionOrderId = orderId;
 

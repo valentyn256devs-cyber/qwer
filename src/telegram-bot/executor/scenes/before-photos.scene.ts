@@ -321,4 +321,35 @@ export class BeforePhotosScene {
     ctx.session.orderId = orderId;
     return ctx.scene.enter(SceneConst.SERVICE_CHECKLIST_SCENE);
   }
+
+  /**
+   * Обробка натискання кнопки «Завантажити фото «до»» з повідомлення
+   * адміністратора про уточнення фото «до».
+   *
+   * Очищає старі фото «до» та запускає флоу завантаження заново
+   * (перезапис старого набору фото новими).
+   */
+  @Action(/^executor_reupload_before_(.+)$/)
+  async onReuploadBefore(@Ctx() ctx: ExecutorWizardContext) {
+    const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
+    this.logger.log(`[BeforePhotosScene] onReuploadBefore`, { userId: ctx.from?.id, orderId });
+    await ctx.answerCbQuery?.();
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
+    if (!orderId) return;
+
+    // Очищаємо старі фото «до», щоб виконавець завантажив нові
+    try {
+      await this.ordersService.clearBeforePhotos(orderId);
+    } catch (error) {
+      this.logger.error(`[BeforePhotosScene] onReuploadBefore failed to clear photos`, error as any);
+      await ctx.reply(ExecutorConst.PhotoSaveError);
+      return;
+    }
+
+    ctx.session = ctx.session || {};
+    ctx.session.orderId = orderId;
+    // Скидаємо індекс слота, щоб флоу почався з першого обовʼязкового слота
+    ctx.session.currentBeforeSlotIndex = 0;
+    return ctx.scene.enter(SceneConst.BEFORE_PHOTOS_SCENE);
+  }
 }

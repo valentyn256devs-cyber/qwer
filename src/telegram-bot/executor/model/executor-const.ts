@@ -36,6 +36,8 @@ export const ExecutorConst = {
   ConfirmSelfcheckButton: '✅ Підтверджую, що всі роботи виконані',
   NextChecklistButton: '➡️ Далі — Service Checklist',
   SendForReviewButton: '📤 Відправити на перевірку',
+  ReuploadBeforePhotosButton: '📸 Завантажити фото «до»',
+  ReuploadAfterPhotosButton: '📸 Завантажити фото «після»',
   GoSubmitButton: '📤 Надіслати роботу на перевірку',
   SkipCommentButton: '⏭️ Пропустити коментар',
   ArrivedButton: '✅ Підтверджую прибуття',
