@@ -84,6 +84,7 @@ export class SearchVerifyScene {
   async onVerifyCorrect(@Ctx() ctx: ExecutorWizardContext) {
     this.logger.log(`[SearchVerifyScene] onVerifyCorrect`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     await ctx.answerCbQuery?.();
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
     return ctx.scene.enter(SceneConst.BEFORE_PHOTOS_SCENE);
   }
 
@@ -92,6 +93,7 @@ export class SearchVerifyScene {
   async onVerifyUpdate(@Ctx() ctx: ExecutorWizardContext) {
     this.logger.log(`[SearchVerifyScene] onVerifyUpdate`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     await ctx.answerCbQuery?.();
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
     await ctx.reply(
       `🔄 <b>Інформація потребує оновлення</b>\n\n` +
       `Ви можете запропонувати оновлення даних про місце поховання. Адміністратор розгляне ваше пропозицію.`,

@@ -79,6 +79,20 @@ export class TelegramAdminListener {
     const orderId = ctx.callbackQuery.data.replace('admin_clarify_executor_', '');
 
     try {
+      // Hide inline keyboard buttons after click
+      await ctx.editMessageReplyMarkup({ inline_keyboard: [] }).catch(() => null);
+
+      // Validate order exists and is in Assigned status
+      const order = await this.ordersService.findById(orderId);
+      if (!order) {
+        await ctx.answerCbQuery('Замовлення не знайдено.');
+        return;
+      }
+      if (order.status !== OrderStatus.Assigned) {
+        await ctx.answerCbQuery('Замовлення не в статусі Assigned. Уточнення неможливе.');
+        return;
+      }
+
       ctx.session = ctx.session || {};
       ctx.session.adminClarifyingOrderId = orderId;
 

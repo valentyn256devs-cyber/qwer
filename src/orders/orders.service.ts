@@ -1153,8 +1153,8 @@ export class OrdersService {
     this.logger.log(`[OrdersService] clarifyBeforePhotos`, { orderId, adminId, comment });
     const order = await this.getOrderObject(orderId);
     const currentStatus = order.get(OrderTable.Fields.Status) as OrderStatus;
-    if (currentStatus !== OrderStatus.Assigned) {
-      throw new BadRequestException('Замовлення не в статусі Assigned');
+    if (currentStatus !== OrderStatus.AwaitingClientConfirmation) {
+      throw new BadRequestException('Замовлення не в статусі AwaitingClientConfirmation');
     }
 
     order.set(OrderTable.Fields.BeforePhotosConfirmedAt, new Date());

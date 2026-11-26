@@ -249,6 +249,7 @@ export class BeforePhotosScene {
   async onNextChecklist(@Ctx() ctx: ExecutorWizardContext) {
     this.logger.log(`[BeforePhotosScene] onNextChecklist`, { userId: ctx.from?.id, orderId: ctx.session?.orderId });
     await ctx.answerCbQuery?.();
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
 
     const order = await requireExecutorOrder(ctx, this.ordersService);
     if (!order) return;
@@ -299,6 +300,7 @@ export class BeforePhotosScene {
   async onBackToDetails(@Ctx() ctx: ExecutorWizardContext) {
     this.logger.log(`[BeforePhotosScene] onBackToDetails`, { userId: ctx.from?.id });
     await ctx.answerCbQuery?.();
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
     return ctx.scene.enter(SceneConst.ORDER_DETAILS_SCENE);
   }
 
@@ -312,6 +314,7 @@ export class BeforePhotosScene {
   async onGoChecklist(@Ctx() ctx: ExecutorWizardContext) {
     this.logger.log(`[BeforePhotosScene] onGoChecklist`, { userId: ctx.from?.id, orderId: ((ctx as any).match as RegExpExecArray | null)?.[1] });
     await ctx.answerCbQuery?.();
+    await ctx.editMessageReplyMarkup({ inline_keyboard: [] });
     const orderId = ((ctx as any).match as RegExpExecArray | null)?.[1] ?? '';
     if (!orderId) return;
     ctx.session = ctx.session || {};
