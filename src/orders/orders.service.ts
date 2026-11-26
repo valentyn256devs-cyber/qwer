@@ -1461,6 +1461,12 @@ export class OrdersService {
     return updatedOrder;
   }
 
+  // =======
+
+  async notifyMessageAllAdmins(text: string, options?: any): Promise<void> {
+    await this.notifyAllAdmins(text, options)
+  }
+
   // ==================== Submission for completion review ====================
 
   /**

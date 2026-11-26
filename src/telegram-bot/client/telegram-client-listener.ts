@@ -1,9 +1,9 @@
-import {Action, Command, Ctx, Hears, On, Start, Update} from 'nestjs-telegraf';
+import { Action, Command, Ctx, Hears, On, Start, Update } from 'nestjs-telegraf';
 import { Logger } from '@nestjs/common';
-import {OrdersService} from '../../orders/orders.service';
-import {ServicesService} from '../../services/services.service';
-import {Context, Markup} from 'telegraf';
-import {type OrderWizardContext} from './interfaces/order-wizard-context.interface';
+import { OrdersService } from '../../orders/orders.service';
+import { ServicesService } from '../../services/services.service';
+import { Context, Markup } from 'telegraf';
+import { type OrderWizardContext } from './interfaces/order-wizard-context.interface';
 import {
   getOrderStatusDescription,
   MainMenu,
@@ -12,14 +12,15 @@ import {
   Scene,
   showMainMenu
 } from "../telegram-constants";
-import {BurialsService} from "../../burials/burials.service";
-import {ServiceResponseDto} from "../../services/dto/service-response.dto";
-import {Message} from "telegraf/types";
-import {ExecutorConst} from "../executor/model/executor-const";
+import { BurialsService } from "../../burials/burials.service";
+import { ServiceResponseDto } from "../../services/dto/service-response.dto";
+import { Message } from "telegraf/types";
+import { ExecutorConst } from "../executor/model/executor-const";
 
 @Update()
 export class TelegramClientListener {
   private readonly logger = new Logger(TelegramClientListener.name);
+
   constructor(
     private readonly ordersService: OrdersService,
     private readonly servicesService: ServicesService,
@@ -36,7 +37,7 @@ export class TelegramClientListener {
     // Головне меню
     await ctx.reply(
       OrderStepUa.Welcome,
-      {parse_mode: 'HTML', reply_markup: mainMenuButtons},
+      { parse_mode: 'HTML', reply_markup: mainMenuButtons },
     );
   }
 
@@ -143,7 +144,7 @@ export class TelegramClientListener {
     try {
       const burials = await this.burialsService.findByTelegramId(telegramId);
       if (loadingMsg) await ctx.telegram.deleteMessage(chatId, loadingMsg.message_id).catch(() => null);
-      await ctx.reply(`🗂 <b>Ваші зареєстровані місця пам'яті:</b>`, {parse_mode: 'HTML'});
+      await ctx.reply(`🗂 <b>Ваші зареєстровані місця пам'яті:</b>`, { parse_mode: 'HTML' });
 
       if (burials.length === 0) {
         // Якщо місць немає, пропонуємо створити перше
@@ -279,7 +280,7 @@ export class TelegramClientListener {
       }
 
       // Відправляємо кожну пачку окремим повідомленням
-      await ctx.reply(response, {parse_mode: 'HTML'});
+      await ctx.reply(response, { parse_mode: 'HTML' });
 
       // Невеличка штучна затримка між повідомленнями (опціонально),
       // щоб Telegram не заблокував за спам флуд-контролем, якщо пачок дуже багато
@@ -296,7 +297,7 @@ export class TelegramClientListener {
   @Command('help')
   async onHelp(@Ctx() ctx: Context) {
     this.logger.log(`[TelegramClientListener] onHelp`, { userId: ctx.from?.id });
-    await ctx.reply(OrderStepUa.HintAdminFeedbackHelp, {parse_mode: 'HTML'});
+    await ctx.reply(OrderStepUa.HintAdminFeedbackHelp, { parse_mode: 'HTML' });
   }
 
   /**
@@ -305,7 +306,10 @@ export class TelegramClientListener {
   @Action(/^client_order_service_(.+)$/)
   async onClientOrderServiceClick(@Ctx() ctx: OrderWizardContext) {
     const match = (ctx as any).match;
-    this.logger.log(`[TelegramClientListener] onClientOrderServiceClick`, { userId: ctx.from?.id, serviceId: match?.[1] });
+    this.logger.log(`[TelegramClientListener] onClientOrderServiceClick`, {
+      userId: ctx.from?.id,
+      serviceId: match?.[1]
+    });
     // 1. Обов'язково знімаємо "годинничок" (анімацію завантаження) з інлайн-кнопки
     await ctx.telegram.answerCbQuery(ctx.callbackQuery?.id ?? '').catch(() => null);
 
@@ -344,12 +348,15 @@ export class TelegramClientListener {
 
     // Видаляємо інлайн-кнопки або старе повідомлення, щоб не засмічувати чат
     await ctx.deleteMessage().catch(() => null);
-    await ctx.reply(OrderStepUa.ReturnToMainMenu, {reply_markup: mainMenuButtons});
+    await ctx.reply(OrderStepUa.ReturnToMainMenu, { reply_markup: mainMenuButtons });
   }
 
   @Action(/^client_service_desc_(.+)$/)
   async onServiceDescription(@Ctx() ctx: Context & { match: RegExpExecArray }) {
-    this.logger.log(`[TelegramClientListener] onServiceDescription`, { userId: ctx.from?.id, serviceId: ctx.match?.[1] });
+    this.logger.log(`[TelegramClientListener] onServiceDescription`, {
+      userId: ctx.from?.id,
+      serviceId: ctx.match?.[1]
+    });
     const callbackQuery = ctx.callbackQuery;
     if (!callbackQuery) return;
 
@@ -519,16 +526,23 @@ export class TelegramClientListener {
 
       // Надсилаємо повідомлення клієнта адміну з кнопкою "Переслать виконавцю"
       try {
-        await ctx.telegram.sendMessage(adminChatId, `📨 <b>Повідомлення від клієнта (замовлення №${orderId})</b>\n\n💬 ${text}`, {
-          parse_mode: 'HTML',
-          reply_markup: {
-            inline_keyboard: [
-              [
-                { text: ExecutorConst.AdminForwardToExecutorButton, callback_data: `admin_forward_to_executor_${orderId}` },
+        await this.ordersService.notifyMessageAllAdmins(
+          `📨 <b>Повідомлення від клієнта (замовлення №${orderId})</b>\n\n💬 ${text}`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: {
+              inline_keyboard: [
+                [
+                  {
+                    text: ExecutorConst.AdminForwardToExecutorButton,
+                    callback_data: `admin_forward_to_executor_${orderId}`
+                  },
+                ],
               ],
-            ],
-          },
-        });
+            },
+          }
+        )
+
       } catch (error) {
         console.error(`Не вдалося надіслати повідомлення клієнта адміну ${adminChatId}:`, error);
       }
@@ -540,6 +554,95 @@ export class TelegramClientListener {
     await ctx.reply(
       OrderStepUa.GetMessage + ` "${text}".\n` + OrderStepUa.HintHelp,
     );
+  }
+
+  @Action(/^client_confirm_yes_(.+)$/)
+  async onClientConfirmYes(@Ctx() ctx: any) {
+    this.logger.log(`[TelegramClientListener] onClientConfirmYes`, { userId: ctx.from?.id, orderId: ctx.match?.[1] });
+    await ctx.answerCbQuery?.();
+    const orderId = ctx.match?.[1] ?? '';
+    const telegramId = ctx.from?.id?.toString() ?? '';
+    if (!orderId || !telegramId) return;
+
+    try {
+      await this.ordersService.confirmClientConfirmation(orderId, telegramId, 'yes');
+      await ctx.editMessageText(
+        `✅ <b>Дякуємо! Ви підтвердили, що поховання за замовленням №${orderId} знайдено правильно.</b>\n\nВиконавець приступає до виконання робіт.`,
+        { parse_mode: 'HTML' },
+      ).catch(() => null);
+    } catch (error) {
+      await ctx.reply(`❌ Не вдалося підтвердити: ${(error as Error).message}`);
+    }
+  }
+
+  // ==================== Client confirmation callbacks ====================
+
+  @Action(/^client_confirm_clarify_(.+)$/)
+  async onClientConfirmClarify(@Ctx() ctx: any) {
+    this.logger.log(`[TelegramClientListener] onClientConfirmClarify`, {
+      userId: ctx.from?.id,
+      orderId: ctx.match?.[1]
+    });
+    await ctx.answerCbQuery?.();
+    const orderId = ctx.match?.[1] ?? '';
+    const telegramId = ctx.from?.id?.toString() ?? '';
+    if (!orderId || !telegramId) return;
+
+    try {
+      await this.ordersService.confirmClientConfirmation(orderId, telegramId, 'clarification');
+      await ctx.editMessageText(
+        `❓ <b>Запит на уточнення відправлено за замовленням №${orderId}.</b>\n\nАдміністратор зв\'яжеться з вами для уточнення деталей.`,
+        { parse_mode: 'HTML' },
+      ).catch(() => null);
+    } catch (error) {
+      await ctx.reply(`❌ Не вдалося надіслати запит: ${(error as Error).message}`);
+    }
+  }
+
+  @Action(/^client_confirm_addservice_(.+)$/)
+  async onClientConfirmAddService(@Ctx() ctx: any) {
+    this.logger.log(`[TelegramClientListener] onClientConfirmAddService`, {
+      userId: ctx.from?.id,
+      orderId: ctx.match?.[1]
+    });
+    await ctx.answerCbQuery?.();
+    const orderId = ctx.match?.[1] ?? '';
+    const telegramId = ctx.from?.id?.toString() ?? '';
+    if (!orderId || !telegramId) return;
+
+    ctx.session = ctx.session || {};
+    ctx.session.addingAdditionalService = { orderId, telegramId };
+
+    await ctx.reply(
+      `➕ <b>Додавання послуги до замовлення №${orderId}</b>\n\n` +
+      `Введіть назву додаткової послуги (наприклад: квіти, лампадка, додаткове очищення тощо):`,
+      { parse_mode: 'HTML' },
+    ).catch(() => null);
+  }
+
+  @On('text')
+  async onAdditionalServiceText(@Ctx() ctx: any) {
+    this.logger.log(`[TelegramClientListener] onAdditionalServiceText`, {
+      userId: ctx.from?.id,
+      text: ctx.message?.text
+    });
+    const pending = ctx.session?.addingAdditionalService;
+    if (!pending?.orderId || !pending?.telegramId) return;
+
+    const text = ctx.message?.text?.trim();
+    if (!text) return;
+
+    ctx.session.addingAdditionalService = null;
+
+    try {
+      await this.ordersService.addAdditionalService(pending.orderId, pending.telegramId, text);
+      await ctx.reply(
+        `✅ Додаткову послугу «${text}» додано до замовлення №${pending.orderId}.`,
+        { parse_mode: 'HTML' },
+      ).catch(() => null);
+    } catch (error) {
+      await ctx.reply(`❌ Не вдалося додати послугу: ${(error as Error).message}`);
+    }
   }
 
   private async prepareServicesButtons(
@@ -582,86 +685,6 @@ export class TelegramClientListener {
     return {
       responseText,
       inlineButtons
-    }
-  }
-
-  // ==================== Client confirmation callbacks ====================
-
-  @Action(/^client_confirm_yes_(.+)$/)
-  async onClientConfirmYes(@Ctx() ctx: any) {
-    this.logger.log(`[TelegramClientListener] onClientConfirmYes`, { userId: ctx.from?.id, orderId: ctx.match?.[1] });
-    await ctx.answerCbQuery?.();
-    const orderId = ctx.match?.[1] ?? '';
-    const telegramId = ctx.from?.id?.toString() ?? '';
-    if (!orderId || !telegramId) return;
-
-    try {
-      await this.ordersService.confirmClientConfirmation(orderId, telegramId, 'yes');
-      await ctx.editMessageText(
-        `✅ <b>Дякуємо! Ви підтвердили, що поховання за замовленням №${orderId} знайдено правильно.</b>\n\nВиконавець приступає до виконання робіт.`,
-        { parse_mode: 'HTML' },
-      ).catch(() => null);
-    } catch (error) {
-      await ctx.reply(`❌ Не вдалося підтвердити: ${(error as Error).message}`);
-    }
-  }
-
-  @Action(/^client_confirm_clarify_(.+)$/)
-  async onClientConfirmClarify(@Ctx() ctx: any) {
-    this.logger.log(`[TelegramClientListener] onClientConfirmClarify`, { userId: ctx.from?.id, orderId: ctx.match?.[1] });
-    await ctx.answerCbQuery?.();
-    const orderId = ctx.match?.[1] ?? '';
-    const telegramId = ctx.from?.id?.toString() ?? '';
-    if (!orderId || !telegramId) return;
-
-    try {
-      await this.ordersService.confirmClientConfirmation(orderId, telegramId, 'clarification');
-      await ctx.editMessageText(
-        `❓ <b>Запит на уточнення відправлено за замовленням №${orderId}.</b>\n\nАдміністратор зв\'яжеться з вами для уточнення деталей.`,
-        { parse_mode: 'HTML' },
-      ).catch(() => null);
-    } catch (error) {
-      await ctx.reply(`❌ Не вдалося надіслати запит: ${(error as Error).message}`);
-    }
-  }
-
-  @Action(/^client_confirm_addservice_(.+)$/)
-  async onClientConfirmAddService(@Ctx() ctx: any) {
-    this.logger.log(`[TelegramClientListener] onClientConfirmAddService`, { userId: ctx.from?.id, orderId: ctx.match?.[1] });
-    await ctx.answerCbQuery?.();
-    const orderId = ctx.match?.[1] ?? '';
-    const telegramId = ctx.from?.id?.toString() ?? '';
-    if (!orderId || !telegramId) return;
-
-    ctx.session = ctx.session || {};
-    ctx.session.addingAdditionalService = { orderId, telegramId };
-
-    await ctx.reply(
-      `➕ <b>Додавання послуги до замовлення №${orderId}</b>\n\n` +
-      `Введіть назву додаткової послуги (наприклад: квіти, лампадка, додаткове очищення тощо):`,
-      { parse_mode: 'HTML' },
-    ).catch(() => null);
-  }
-
-  @On('text')
-  async onAdditionalServiceText(@Ctx() ctx: any) {
-    this.logger.log(`[TelegramClientListener] onAdditionalServiceText`, { userId: ctx.from?.id, text: ctx.message?.text });
-    const pending = ctx.session?.addingAdditionalService;
-    if (!pending?.orderId || !pending?.telegramId) return;
-
-    const text = ctx.message?.text?.trim();
-    if (!text) return;
-
-    ctx.session.addingAdditionalService = null;
-
-    try {
-      await this.ordersService.addAdditionalService(pending.orderId, pending.telegramId, text);
-      await ctx.reply(
-        `✅ Додаткову послугу «${text}» додано до замовлення №${pending.orderId}.`,
-        { parse_mode: 'HTML' },
-      ).catch(() => null);
-    } catch (error) {
-      await ctx.reply(`❌ Не вдалося додати послугу: ${(error as Error).message}`);
     }
   }
 

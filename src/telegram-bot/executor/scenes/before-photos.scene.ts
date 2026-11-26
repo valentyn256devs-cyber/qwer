@@ -208,7 +208,7 @@ export class BeforePhotosScene {
 
     if (allFilled) {
       await ctx.reply(
-        `✅ Фото для слоту "${slot.name}" збережено (${count}/${slot.minPhotos}).\n\n` +
+        `✅ Фото для слоту "${slot.name}" збережено.\n\n` +
         `Всі обовʼязкові фото завантажено.\nНадішліть на перевірку адміністратору.`,
         {
           reply_markup: Markup.inlineKeyboard(BEFORE_PHOTO_BUTTONS(false)).reply_markup,
@@ -229,13 +229,13 @@ export class BeforePhotosScene {
         const nextSlot = slots[nextSlotIndex];
         ctx.session.currentBeforeSlotIndex = nextSlotIndex;
         await ctx.reply(
-          `✅ Фото для слоту "${slot.name}" збережено (${count}/${slot.minPhotos}).\n\n` +
+          `✅ Фото для слоту "${slot.name}" збережено.\n\n` +
           `📸 Наступне фото — ${nextSlot.name}\n${nextSlot.instruction}\n\nНадішліть одне фото.`,
           { parse_mode: 'HTML' },
         );
       } else {
         await ctx.reply(
-          `✅ Фото для слоту "${slot.name}" збережено (${count}/${slot.minPhotos}).\n\n` +
+          `✅ Фото для слоту "${slot.name}" збережено.\n\n` +
           `Всі обовʼязкові фото завантажено.\nНадішліть на перевірку адміністратору.`,
           {
             reply_markup: Markup.inlineKeyboard(BEFORE_PHOTO_BUTTONS(false)).reply_markup,
